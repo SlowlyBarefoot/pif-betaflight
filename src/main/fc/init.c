@@ -24,6 +24,7 @@
 #include <math.h>
 
 #include "platform.h"
+#include "pif_linker.h"
 
 #include "blackbox/blackbox.h"
 
@@ -260,6 +261,12 @@ void init(void)
 #endif
 
     systemInit();
+
+    pif_Init(micros);
+
+    pifTaskManager_Init(TASK_SIZE);
+
+    pifTimerManager_Init(&g_timer_1ms, PIF_ID_AUTO, 1000, TIMER_1MS_SIZE);		        // 1000us
 
     // Initialize task data as soon as possible. Has to be done before tasksInit(),
     // and any init code that may try to modify task behaviour before tasksInit().

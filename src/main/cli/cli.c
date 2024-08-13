@@ -27,6 +27,7 @@
 #include <ctype.h>
 
 #include "platform.h"
+#include "pif_linker.h"
 
 // FIXME remove this for targets that don't need a CLI.  Perhaps use a no-op macro when USE_CLI is not enabled
 // signal that we're in cli mode
@@ -4761,6 +4762,8 @@ static void cliStatus(const char *cmdName, char *cmdline)
 
     cliPrintf(" (%s%s)", SYSCLKSource[sysclkSource], (sysclkSource < 2) ? "" : PLLSource[pllSource]);
 #endif
+
+    cliPrintf("Task Count: %d / %d, Timer Count: %d / %d\r\n", pifTaskManager_Count(), TASK_SIZE, pifTimerManager_Count(&g_timer_1ms), TIMER_1MS_SIZE);
 
 #ifdef USE_ADC_INTERNAL
     uint16_t vrefintMv = getVrefMv();

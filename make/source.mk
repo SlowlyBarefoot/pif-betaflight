@@ -200,12 +200,19 @@ COMMON_SRC = \
             io/vtx_smartaudio.c \
             io/vtx_tramp.c \
             io/vtx_control.c \
+		    pif_linker.c
 
 COMMON_DEVICE_SRC = \
             $(CMSIS_SRC) \
             $(DEVICE_STDPERIPH_SRC)
 
-COMMON_SRC := $(COMMON_SRC) $(COMMON_DEVICE_SRC)
+PIF_SRC = \
+            ../../pif/source/core/pif.c \
+            ../../pif/source/core/pif_obj_array.c \
+            ../../pif/source/core/pif_task.c \
+            ../../pif/source/core/pif_timer.c
+
+COMMON_SRC := $(COMMON_SRC) $(COMMON_DEVICE_SRC) $(PIF_SRC)
 
 ifeq ($(EXST),yes)
 TARGET_FLAGS := -DUSE_EXST $(TARGET_FLAGS)
