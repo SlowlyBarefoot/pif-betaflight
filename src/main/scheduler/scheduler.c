@@ -91,7 +91,7 @@ void getTaskInfo(taskId_e taskId, taskInfo_t * taskInfo)
     taskInfo->taskName = task->attribute->taskName;
     taskInfo->subTaskName = task->attribute->subTaskName;
     taskInfo->maxExecutionTimeUs = p_task->_max_execution_time;
-    taskInfo->totalExecutionTimeUs = (p_task->__total_execution_time[0] + p_task->__total_execution_time[1]) * p_task->_unit;
+    taskInfo->totalExecutionTimeUs = p_task->_total_execution_time * p_task->_unit;
     taskInfo->averageExecutionTimeUs = pifTask_GetAverageExecuteTime(p_task);
     taskInfo->averageDeltaTimeUs = pifTask_GetAverageDeltaTime(p_task);
     taskInfo->latestDeltaTimeUs = p_task->_delta_time;
