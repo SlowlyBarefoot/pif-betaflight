@@ -1176,7 +1176,7 @@ bool osdUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
 }
 
 // Called when there is OSD update work to be done
-void osdUpdate(timeUs_t currentTimeUs)
+uint16_t osdUpdate(PifTask *p_task)
 {
     static uint16_t osdStateDurationFractionUs[OSD_STATE_COUNT] = { 0 };
     static uint32_t osdElementDurationUs[OSD_ITEM_COUNT] = { 0 };
@@ -1188,6 +1188,8 @@ void osdUpdate(timeUs_t currentTimeUs)
     uint8_t osdCurrentElementGroup = 0;
     timeUs_t executeTimeUs;
     osdState_e osdCurrentState = osdState;
+
+    UNUSED(p_task);
 
     if (osdState != OSD_STATE_UPDATE_CANVAS) {
         schedulerIgnoreTaskExecRate();
@@ -1202,7 +1204,7 @@ void osdUpdate(timeUs_t currentTimeUs)
             } else {
                 schedulerIgnoreTaskExecTime();
             }
-            return;
+            return 0;
         }
 
         osdCompleteInitialization();
@@ -1223,7 +1225,7 @@ void osdUpdate(timeUs_t currentTimeUs)
     case OSD_STATE_UPDATE_HEARTBEAT:
         if (displayHeartbeat(osdDisplayPort)) {
             // Extraordinary action was taken, so return without allowing osdStateDurationFractionUs table to be updated
-            return;
+            return 0;
         }
 
         osdState = OSD_STATE_PROCESS_STATS1;
@@ -1231,7 +1233,7 @@ void osdUpdate(timeUs_t currentTimeUs)
 
     case OSD_STATE_PROCESS_STATS1:
         {
-            bool refreshStatsRequired = osdProcessStats1(currentTimeUs);
+            bool refreshStatsRequired = osdProcessStats1(pif_timer1us);
 
             if (refreshStatsRequired) {
                 osdState = OSD_STATE_REFRESH_STATS;
@@ -1249,7 +1251,7 @@ void osdUpdate(timeUs_t currentTimeUs)
             break;
         }
     case OSD_STATE_PROCESS_STATS2:
-        osdProcessStats2(currentTimeUs);
+        osdProcessStats2(pif_timer1us);
 
         osdState = OSD_STATE_PROCESS_STATS3;
         break;
@@ -1371,7 +1373,7 @@ void osdUpdate(timeUs_t currentTimeUs)
                     break;
                 }
 
-                moreElements = osdDrawNextActiveElement(osdDisplayPort, currentTimeUs);
+                moreElements = osdDrawNextActiveElement(osdDisplayPort, pif_timer1us);
 
                 executeTimeUs = micros() - startElementTime;
 
@@ -1427,7 +1429,7 @@ void osdUpdate(timeUs_t currentTimeUs)
     }
 
     if (!schedulerGetIgnoreTaskExecTime()) {
-        executeTimeUs = micros() - currentTimeUs;
+        executeTimeUs = micros() - pif_timer1us;
 
 
         // On the first pass no element groups will have been formed, so all elements will have been
@@ -1460,6 +1462,7 @@ void osdUpdate(timeUs_t currentTimeUs)
             schedulerSetNextStateTime((osdStateDurationFractionUs[osdState] >> OSD_EXEC_TIME_SHIFT) + OSD_TASK_MARGIN);
         }
     }
+    return 0;
 }
 
 void osdSuppressStats(bool flag)

@@ -452,8 +452,10 @@ void crsfScheduleSpeedNegotiationResponse(void)
     crsfSpeed.isNewSpeedValid = false;
 }
 
-void speedNegotiationProcess(timeUs_t currentTimeUs)
+uint16_t speedNegotiationProcess(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     if (crsfSpeed.hasPendingReply) {
         bool found = ((crsfSpeed.index < BAUD_COUNT) && crsfRxUseNegotiatedBaud()) ? true : false;
         sbuf_t crsfSpeedNegotiationBuf;
@@ -465,9 +467,9 @@ void speedNegotiationProcess(timeUs_t currentTimeUs)
         crsfRxSendTelemetryData();
         crsfSpeed.hasPendingReply = false;
         crsfSpeed.isNewSpeedValid = found;
-        crsfSpeed.confirmationTime = currentTimeUs;
+        crsfSpeed.confirmationTime = pif_timer1us;
     } else if (crsfSpeed.isNewSpeedValid) {
-        if (cmpTimeUs(currentTimeUs, crsfSpeed.confirmationTime) >= 4000) {
+        if (cmpTimeUs(pif_timer1us, crsfSpeed.confirmationTime) >= 4000) {
             // delay 4ms before applying the new baudrate
             crsfRxUpdateBaudrate(getCrsfDesiredSpeed());
             crsfSpeed.isNewSpeedValid = false;
@@ -483,6 +485,7 @@ void speedNegotiationProcess(timeUs_t currentTimeUs)
         crsfFinalize(dst);
         crsfRxSendTelemetryData();
     }
+    return 0;
 }
 #endif
 

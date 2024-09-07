@@ -129,9 +129,9 @@ PG_RESET_TEMPLATE(batteryConfig_t, batteryConfig,
     .vbatDurationForCritical = 0,
 );
 
-void batteryUpdateVoltage(timeUs_t currentTimeUs)
+uint16_t batteryUpdateVoltage(PifTask *p_task)
 {
-    UNUSED(currentTimeUs);
+    UNUSED(p_task);
 
     switch (batteryConfig()->voltageMeterSource) {
 #ifdef USE_ESC_SENSOR
@@ -155,6 +155,7 @@ void batteryUpdateVoltage(timeUs_t currentTimeUs)
 
     DEBUG_SET(DEBUG_BATTERY, 0, voltageMeter.unfiltered);
     DEBUG_SET(DEBUG_BATTERY, 1, voltageMeter.displayFiltered);
+    return 0;
 }
 
 static void updateBatteryBeeperAlert(void)
@@ -413,16 +414,18 @@ void batteryInit(void)
     }
 }
 
-void batteryUpdateCurrentMeter(timeUs_t currentTimeUs)
+uint16_t batteryUpdateCurrentMeter(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     if (batteryCellCount == 0) {
         currentMeterReset(&currentMeter);
-        return;
+        return 0;
     }
 
     static uint32_t ibatLastServiced = 0;
-    const int32_t lastUpdateAt = cmp32(currentTimeUs, ibatLastServiced);
-    ibatLastServiced = currentTimeUs;
+    const int32_t lastUpdateAt = cmp32(pif_timer1us, ibatLastServiced);
+    ibatLastServiced = pif_timer1us;
 
     switch (batteryConfig()->currentMeterSource) {
         case CURRENT_METER_ADC:
@@ -462,6 +465,7 @@ void batteryUpdateCurrentMeter(timeUs_t currentTimeUs)
             currentMeterReset(&currentMeter);
             break;
     }
+    return 0;
 }
 
 uint8_t calculateBatteryPercentageRemaining(void)

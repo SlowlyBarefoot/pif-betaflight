@@ -26,12 +26,13 @@
   */
 
 /* Includes ------------------------------------------------------------------*/
+#include "platform.h"
+
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "usbd_req.h"
 #include "usbd_conf.h"
 #include "usb_regs.h"
-#include "platform.h"
 
 #define         DEVICE_ID1          (0x1FFFF7E8)
 #define         DEVICE_ID2          (0x1FFFF7EA)

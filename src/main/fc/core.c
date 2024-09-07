@@ -57,6 +57,7 @@
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 #include "fc/stats.h"
+#include "fc/tasks.h"
 
 #include "flight/failsafe.h"
 #include "flight/gps_rescue.h"
@@ -101,6 +102,7 @@
 #include "sensors/boardalignment.h"
 #include "sensors/compass.h"
 #include "sensors/gyro.h"
+#include "sensors/gyro_init.h"
 
 #include "telemetry/telemetry.h"
 
@@ -1235,14 +1237,87 @@ static FAST_CODE_NOINLINE void subTaskRcCommand(timeUs_t currentTimeUs)
     processRcCommand();
 }
 
-FAST_CODE void taskGyroSample(timeUs_t currentTimeUs)
+FAST_CODE uint16_t taskGyroSample(PifTask *p_task)
 {
-    UNUSED(currentTimeUs);
+    static timeMs_t lastFailsafeCheckMs = 0;
+
+    UNUSED(p_task);
+
     gyroUpdate();
     if (pidUpdateCounter % activePidLoopDenom == 0) {
         pidUpdateCounter = 0;
     }
     pidUpdateCounter++;
+
+    if (gyroFilterReady()) {
+        pifTask_SetTrigger(getTask(TASK_FILTER)->p_task);
+    }
+    if (pidLoopReady()) {
+        pifTask_SetTrigger(getTask(TASK_PID)->p_task);
+    }
+
+    // Check for incoming RX data. Don't do this in the checker as that is called repeatedly within
+    // a given gyro loop, and ELRS takes a long time to process this and so can only be safely processed
+    // before the checkers
+    rxFrameCheck(pif_timer1us, cmpTimeUs(pif_timer1us, getTask(TASK_RX)->p_task->_last_execute_time));
+
+    // Check for failsafe conditions without reliance on the RX task being well behaved
+    if (cmp32(millis(), lastFailsafeCheckMs) > PERIOD_RXDATA_FAILURE) {
+        // This is very low cost taking less that 4us every 10ms
+        failsafeCheckDataFailurePeriod();
+        failsafeUpdateState();
+        lastFailsafeCheckMs = millis();
+    }
+
+#ifdef USE_GYRO_EXTI
+    gyroDev_t *gyro = gyroActiveDev();
+    uint32_t nowCycles = getCycleCounter();
+
+    // Bring the scheduler into lock with the gyro
+    if (gyro->gyroModeSPI != GYRO_EXTI_NO_INT) {
+        // Track the actual gyro rate over given number of cycle times and set the expected timebase
+        static uint32_t terminalGyroRateCount = 0;
+        static int32_t sampleRateStartCycles;
+
+        if ((terminalGyroRateCount == 0)) {
+            terminalGyroRateCount = gyro->detectedEXTI + GYRO_RATE_COUNT;
+            sampleRateStartCycles = nowCycles;
+        }
+
+        if (gyro->detectedEXTI >= terminalGyroRateCount) {
+            // Calculate the number of clock cycles on average between gyro interrupts
+            uint32_t sampleCycles = nowCycles - sampleRateStartCycles;
+            desiredPeriodCycles = sampleCycles / GYRO_RATE_COUNT;
+            sampleRateStartCycles = nowCycles;
+            terminalGyroRateCount += GYRO_RATE_COUNT;
+        }
+
+        // Track the actual gyro rate over given number of cycle times and remove skew
+        static uint32_t terminalGyroLockCount = 0;
+        static int32_t accGyroSkew = 0;
+
+        int32_t gyroSkew = cmpTimeCycles(lastTargetCycles, gyro->gyroSyncEXTI) % desiredPeriodCycles;
+        if (gyroSkew > (desiredPeriodCycles / 2)) {
+            gyroSkew -= desiredPeriodCycles;
+        }
+
+        accGyroSkew += gyroSkew;
+
+        if ((terminalGyroLockCount == 0)) {
+            terminalGyroLockCount = gyro->detectedEXTI + GYRO_LOCK_COUNT;
+        }
+
+        if (gyro->detectedEXTI >= terminalGyroLockCount) {
+            terminalGyroLockCount += GYRO_LOCK_COUNT;
+
+            // Move the desired start time of the gyroTask
+            lastTargetCycles -= (accGyroSkew/GYRO_LOCK_COUNT);
+            DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 3, clockCyclesTo10thMicros(accGyroSkew/GYRO_LOCK_COUNT));
+            accGyroSkew = 0;
+        }
+    }
+#endif
+    return 0;
 }
 
 FAST_CODE bool gyroFilterReady(void)
@@ -1262,15 +1337,18 @@ FAST_CODE bool pidLoopReady(void)
     return false;
 }
 
-FAST_CODE void taskFiltering(timeUs_t currentTimeUs)
+FAST_CODE uint16_t taskFiltering(PifTask *p_task)
 {
-    gyroFiltering(currentTimeUs);
+    UNUSED(p_task);
 
+    gyroFiltering(pif_timer1us);
+    return 0;
 }
 
 // Function for loop trigger
-FAST_CODE void taskMainPidLoop(timeUs_t currentTimeUs)
+FAST_CODE uint16_t taskMainPidLoop(PifTask *p_task)
 {
+    UNUSED(p_task);
 
 #if defined(SIMULATOR_BUILD) && defined(SIMULATOR_GYROPID_SYNC)
     if (lockMainPID() != 0) return;
@@ -1281,15 +1359,16 @@ FAST_CODE void taskMainPidLoop(timeUs_t currentTimeUs)
     // 1 - subTaskPidController()
     // 2 - subTaskMotorUpdate()
     // 3 - subTaskPidSubprocesses()
-    DEBUG_SET(DEBUG_PIDLOOP, 0, micros() - currentTimeUs);
+    DEBUG_SET(DEBUG_PIDLOOP, 0, micros() - pif_timer1us);
 
-    subTaskRcCommand(currentTimeUs);
-    subTaskPidController(currentTimeUs);
-    subTaskMotorUpdate(currentTimeUs);
-    subTaskPidSubprocesses(currentTimeUs);
+    subTaskRcCommand(pif_timer1us);
+    subTaskPidController(pif_timer1us);
+    subTaskMotorUpdate(pif_timer1us);
+    subTaskPidSubprocesses(pif_timer1us);
 
-    DEBUG_SET(DEBUG_CYCLETIME, 0, getTaskDeltaTimeUs(TASK_SELF));
+    DEBUG_SET(DEBUG_CYCLETIME, 0, getTaskDeltaTimeUs(TASK_PID));
     DEBUG_SET(DEBUG_CYCLETIME, 1, getAverageSystemLoadPercent());
+    return 0;
 }
 
 bool isFlipOverAfterCrashActive(void)

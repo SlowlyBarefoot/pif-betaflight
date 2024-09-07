@@ -79,11 +79,11 @@ bool processRx(timeUs_t currentTimeUs);
 void processRxModes(timeUs_t currentTimeUs);
 void updateArmingStatus(void);
 
-void taskGyroSample(timeUs_t currentTimeUs);
+uint16_t taskGyroSample(PifTask *p_task);
 bool gyroFilterReady(void);
 bool pidLoopReady(void);
-void taskFiltering(timeUs_t currentTimeUs);
-void taskMainPidLoop(timeUs_t currentTimeUs);
+uint16_t taskFiltering(PifTask *p_task);
+uint16_t taskMainPidLoop(PifTask *p_task);
 
 bool isFlipOverAfterCrashActive(void);
 int8_t calculateThrottlePercent(void);

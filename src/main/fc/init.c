@@ -24,7 +24,6 @@
 #include <math.h>
 
 #include "platform.h"
-#include "pif_linker.h"
 
 #include "blackbox/blackbox.h"
 

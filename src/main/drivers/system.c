@@ -23,7 +23,6 @@
 #include <string.h>
 
 #include "platform.h"
-#include "pif_linker.h"
 
 #include "build/atomic.h"
 

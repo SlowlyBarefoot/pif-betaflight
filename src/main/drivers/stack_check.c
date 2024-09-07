@@ -62,9 +62,9 @@ extern char _Min_Stack_Size; // declared in .LD file
 
 static uint32_t usedStackSize;
 
-void taskStackCheck(timeUs_t currentTimeUs)
+uint16_t taskStackCheck(PifTask *p_task)
 {
-    UNUSED(currentTimeUs);
+    UNUSED(p_task);
 
     char * const stackHighMem = &_estack;
     const uint32_t stackSize = (uint32_t)&_Min_Stack_Size;
@@ -84,6 +84,7 @@ void taskStackCheck(timeUs_t currentTimeUs)
     DEBUG_SET(DEBUG_STACK, 1, (uint32_t)stackLowMem & 0xffff);
     DEBUG_SET(DEBUG_STACK, 2, (uint32_t)stackCurrent & 0xffff);
     DEBUG_SET(DEBUG_STACK, 3, (uint32_t)p & 0xffff);
+    return 0;
 }
 
 uint32_t stackUsedSize(void)

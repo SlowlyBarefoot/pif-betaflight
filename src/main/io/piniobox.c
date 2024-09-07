@@ -55,15 +55,16 @@ void pinioBoxInit(const pinioBoxConfig_t *pinioBoxConfig)
     }
 }
 
-void pinioBoxUpdate(timeUs_t currentTimeUs)
+uint16_t pinioBoxUpdate(PifTask *p_task)
 {
-    UNUSED(currentTimeUs);
+    UNUSED(p_task);
 
     for (int i = 0; i < PINIO_COUNT; i++) {
         if (pinioBoxRuntimeConfig.boxId[i] != BOXID_NONE) {
             pinioSet(i, getBoxIdState(pinioBoxRuntimeConfig.boxId[i]));
         }
     }
+    return 0;
 }
 
 void pinioBoxTaskControl(void)

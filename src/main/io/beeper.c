@@ -379,8 +379,10 @@ static void beeperGpsStatus(void)
  * Beeper handler function to be called periodically in loop. Updates beeper
  * state via time schedule.
  */
-void beeperUpdate(timeUs_t currentTimeUs)
+uint16_t beeperUpdate(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     // If beeper option from AUX switch has been selected
     if (IS_RC_MODE_ACTIVE(BOXBEEPERON)) {
         beeper(BEEPER_RX_SET);
@@ -392,12 +394,12 @@ void beeperUpdate(timeUs_t currentTimeUs)
 
     // Beeper routine doesn't need to update if there aren't any sounds ongoing
     if (currentBeeperEntry == NULL) {
-        return;
+        return 0;
     }
 
-    if (beeperNextToggleTime > currentTimeUs) {
+    if (beeperNextToggleTime > pif_timer1us) {
         schedulerIgnoreTaskExecTime();
-        return;
+        return 0;
     }
 
     if (!beeperIsOn) {
@@ -406,8 +408,8 @@ void beeperUpdate(timeUs_t currentTimeUs)
             && ((currentBeeperEntry->mode == BEEPER_RX_SET && !(beeperConfig()->dshotBeaconOffFlags & BEEPER_GET_FLAG(BEEPER_RX_SET)))
             || (currentBeeperEntry->mode == BEEPER_RX_LOST && !(beeperConfig()->dshotBeaconOffFlags & BEEPER_GET_FLAG(BEEPER_RX_LOST))))) {
 
-            if ((currentTimeUs - getLastDisarmTimeUs() > DSHOT_BEACON_GUARD_DELAY_US) && !isTryingToArm()) {
-                lastDshotBeaconCommandTimeUs = currentTimeUs;
+            if ((pif_timer1us - getLastDisarmTimeUs() > DSHOT_BEACON_GUARD_DELAY_US) && !isTryingToArm()) {
+                lastDshotBeaconCommandTimeUs = pif_timer1us;
                 dshotCommandWrite(ALL_MOTORS, getMotorCount(), beeperConfig()->dshotBeaconTone, DSHOT_CMD_TYPE_INLINE);
             }
         }
@@ -447,7 +449,8 @@ void beeperUpdate(timeUs_t currentTimeUs)
     beeperWasOn = beeperIsOn;
 #endif
     
-    beeperProcessCommand(currentTimeUs);
+    beeperProcessCommand(pif_timer1us);
+    return 0;
 }
 
 /*
@@ -527,7 +530,7 @@ void beeper(beeperMode_e mode) {UNUSED(mode);}
 void beeperSilence(void) {}
 void beeperConfirmationBeeps(uint8_t beepCount) {UNUSED(beepCount);}
 void beeperWarningBeeps(uint8_t beepCount) {UNUSED(beepCount);}
-void beeperUpdate(timeUs_t currentTimeUs) {UNUSED(currentTimeUs);}
+uint16_t beeperUpdate(PifTask *p_task) {UNUSED(p_task); return 0;}
 uint32_t getArmingBeepTimeMicros(void) {return 0;}
 beeperMode_e beeperModeForTableIndex(int idx) {UNUSED(idx); return BEEPER_SILENCE;}
 uint32_t beeperModeMaskForTableIndex(int idx) {UNUSED(idx); return 0;}

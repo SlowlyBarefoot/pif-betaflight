@@ -70,17 +70,19 @@ const transponderRequirement_t transponderRequirements[TRANSPONDER_PROVIDER_COUN
     {TRANSPONDER_ERLT, TRANSPONDER_DATA_LENGTH_ERLT, TRANSPONDER_TRANSMIT_DELAY_ERLT, TRANSPONDER_TRANSMIT_JITTER_ERLT}
 };
 
-void transponderUpdate(timeUs_t currentTimeUs)
+uint16_t transponderUpdate(PifTask *p_task)
 {
     static uint32_t jitterIndex = 0;
 
+    UNUSED(p_task);
+
     if (!(transponderInitialised && transponderRepeat && isTransponderIrReady())) {
-        return;
+        return 0;
     }
 
-    const bool updateNow = (timeDelta_t)(currentTimeUs - nextUpdateAtUs) >= 0L;
+    const bool updateNow = (timeDelta_t)(pif_timer1us - nextUpdateAtUs) >= 0L;
     if (!updateNow) {
-        return;
+        return 0;
     }
 
     uint8_t provider = transponderConfig()->provider;
@@ -91,16 +93,17 @@ void transponderUpdate(timeUs_t currentTimeUs)
         jitterIndex = 0;
     }
 
-    nextUpdateAtUs = currentTimeUs + transponderRequirements[provider - 1].transmitDelay + jitter;
+    nextUpdateAtUs = pif_timer1us + transponderRequirements[provider - 1].transmitDelay + jitter;
 
 #ifdef REDUCE_TRANSPONDER_CURRENT_DRAW_WHEN_USB_CABLE_PRESENT
     // reduce current draw when USB cable is plugged in by decreasing the transponder transmit rate.
     if (usbCableIsInserted()) {
-        nextUpdateAtUs = currentTimeUs + (1000 * 1000) / 10; // 10 hz.
+        nextUpdateAtUs = pif_timer1us + (1000 * 1000) / 10; // 10 hz.
     }
 #endif
 
     transponderIrTransmit();
+    return 0;
 }
 
 void transponderInit(void)

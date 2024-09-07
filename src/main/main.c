@@ -41,7 +41,7 @@ int main(void)
 void FAST_CODE run(void)
 {
     while (true) {
-        scheduler();
+        pifTaskManager_Loop();
 #ifdef SIMULATOR_BUILD
         delayMicroseconds_real(50); // max rate 20kHz
 #endif

@@ -199,7 +199,7 @@ extern uint8_t GPS_svinfo_cno[GPS_SV_MAXSATS_M8N];      // Carrier to Noise Rati
 #define TASK_GPS_RATE_FAST  1000
 
 void gpsInit(void);
-void gpsUpdate(timeUs_t currentTimeUs);
+uint16_t gpsUpdate(PifTask *p_task);
 bool gpsNewFrame(uint8_t c);
 bool gpsIsHealthy(void); // Check for healthy communications
 struct serialPort_s;

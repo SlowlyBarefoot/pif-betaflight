@@ -45,10 +45,12 @@ void dispatchEnable(void)
     dispatchEnabled = true;
 }
 
-void dispatchProcess(uint32_t currentTimeUs)
+uint16_t dispatchProcess(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     for (dispatchEntry_t **p = &head; *p; ) {
-        if (cmp32(currentTimeUs, (*p)->delayedUntil) < 0)
+        if (cmp32(pif_timer1us, (*p)->delayedUntil) < 0)
             break;
         // unlink entry first, so handler can replan self
         dispatchEntry_t *current = *p;
@@ -56,6 +58,7 @@ void dispatchProcess(uint32_t currentTimeUs)
         current->inQue = false;
         (*current->dispatch)(current);
     }
+    return 0;
 }
 
 void dispatchAdd(dispatchEntry_t *entry, int delayUs)

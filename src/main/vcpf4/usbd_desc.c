@@ -20,12 +20,13 @@
   */
 
 /* Includes ------------------------------------------------------------------*/
+#include "platform.h"
+
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "usbd_req.h"
 #include "usbd_conf.h"
 #include "usb_regs.h"
-#include "platform.h"
 #include "build/version.h"
 
 #include "pg/pg.h"

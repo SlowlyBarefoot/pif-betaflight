@@ -568,18 +568,20 @@ static int calculateThrottleAngleCorrection(void)
     return lrintf(throttleAngleValue * sin_approx(angle / (900.0f * M_PIf / 2.0f)));
 }
 
-void imuUpdateAttitude(timeUs_t currentTimeUs)
+uint16_t imuUpdateAttitude(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     if (sensors(SENSOR_ACC) && acc.isAccelUpdatedAtLeastOnce) {
         IMU_LOCK;
 #if defined(SIMULATOR_BUILD) && defined(SIMULATOR_IMU_SYNC)
         if (imuUpdated == false) {
             IMU_UNLOCK;
-            return;
+            return 0;
         }
         imuUpdated = false;
 #endif
-        imuCalculateEstimatedAttitude(currentTimeUs);
+        imuCalculateEstimatedAttitude(pif_timer1us);
         IMU_UNLOCK;
 
         // Update the throttle correction for angle and supply it to the mixer
@@ -595,6 +597,7 @@ void imuUpdateAttitude(timeUs_t currentTimeUs)
         acc.accADC[Z] = 0;
         schedulerIgnoreTaskStateTime();
     }
+    return 0;
 }
 #endif // USE_ACC
 

@@ -1247,14 +1247,14 @@ static void applySimpleProfile(timeUs_t currentTimeUs)
     }
 }
 
-void ledStripUpdate(timeUs_t currentTimeUs)
+uint16_t ledStripUpdate(PifTask *p_task)
 {
-    UNUSED(currentTimeUs);
+    UNUSED(p_task);
 
     if (!isWS2811LedStripReady()) {
         // Call schedulerIgnoreTaskExecTime() unless data is being processed
         schedulerIgnoreTaskExecTime();
-        return;
+        return 0;
     }
 
     if (ledStripEnabled && IS_RC_MODE_ACTIVE(BOXLEDLOW)) {
@@ -1267,13 +1267,13 @@ void ledStripUpdate(timeUs_t currentTimeUs)
         switch (ledStripConfig()->ledstrip_profile) {
 #ifdef USE_LED_STRIP_STATUS_MODE
             case LED_PROFILE_STATUS: {
-                applyStatusProfile(currentTimeUs);
+                applyStatusProfile(pif_timer1us);
                 break;
             }
 #endif
             case LED_PROFILE_RACE:
             case LED_PROFILE_BEACON: {
-                applySimpleProfile(currentTimeUs);
+                applySimpleProfile(pif_timer1us);
                 break;
             }
 
@@ -1284,6 +1284,7 @@ void ledStripUpdate(timeUs_t currentTimeUs)
         // Call schedulerIgnoreTaskExecTime() unless data is being processed
         schedulerIgnoreTaskExecTime();
     }
+    return 0;
 }
 
 uint8_t getLedProfile(void)

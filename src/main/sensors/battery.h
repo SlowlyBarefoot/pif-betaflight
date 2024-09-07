@@ -90,7 +90,7 @@ typedef enum {
 } batteryState_e;
 
 void batteryInit(void);
-void batteryUpdateVoltage(timeUs_t currentTimeUs);
+uint16_t batteryUpdateVoltage(PifTask *p_task);
 void batteryUpdatePresence(void);
 
 batteryState_e getBatteryState(void);
@@ -117,6 +117,6 @@ int32_t getAmperage(void);
 int32_t getAmperageLatest(void);
 int32_t getMAhDrawn(void);
 
-void batteryUpdateCurrentMeter(timeUs_t currentTimeUs);
+uint16_t batteryUpdateCurrentMeter(PifTask *p_task);
 
 const lowVoltageCutoff_t *getLowVoltageCutoff(void);

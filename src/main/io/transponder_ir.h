@@ -43,7 +43,7 @@ extern const transponderRequirement_t transponderRequirements[TRANSPONDER_PROVID
 
 void transponderInit(void);
 
-void transponderUpdate(timeUs_t currentTimeUs);
+uint16_t transponderUpdate(PifTask *p_task);
 void transponderUpdateData(void);
 void transponderTransmitOnce(void);
 void transponderStartRepeating(void);

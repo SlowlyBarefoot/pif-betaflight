@@ -293,13 +293,15 @@ static void rcdeviceProcessDeviceRequest(runcamDeviceRequest_t *request)
     }
 }
 
-void rcdeviceUpdate(timeUs_t currentTimeUs)
+uint16_t rcdeviceUpdate(PifTask *p_task)
 {
-    rcdeviceReceive(currentTimeUs);
+    UNUSED(p_task);
+
+    rcdeviceReceive(pif_timer1us);
 
     rcdeviceCameraControlProcess();
 
-    rcdevice5KeySimulationProcess(currentTimeUs);
+    rcdevice5KeySimulationProcess(pif_timer1us);
 
     if (isFeatureSupported(RCDEVICE_PROTOCOL_FEATURE_FC_ATTITUDE)) {
         runcamDeviceRequest_t *request = rcdeviceGetRequest();
@@ -307,6 +309,7 @@ void rcdeviceUpdate(timeUs_t currentTimeUs)
             rcdeviceProcessDeviceRequest(request);
         }
     }
+    return 0;
 }
 
 void rcdeviceInit(void)

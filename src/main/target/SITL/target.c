@@ -149,7 +149,7 @@ void updateState(const fdm_packet* pkt) {
 
 #if defined(SIMULATOR_IMU_SYNC)
     imuSetHasNewData(deltaSim*1e6);
-    imuUpdateAttitude(micros());
+    imuUpdateAttitude(NULL);
 #endif
 
 

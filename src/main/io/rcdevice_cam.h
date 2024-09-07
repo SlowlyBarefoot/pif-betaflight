@@ -40,7 +40,7 @@ extern runcamDevice_t *camDevice;
 extern bool rcdeviceInMenu;
 
 void rcdeviceInit(void);
-void rcdeviceUpdate(timeUs_t currentTimeUs);
+uint16_t rcdeviceUpdate(PifTask *p_task);
 
 bool rcdeviceIsEnabled(void);
 

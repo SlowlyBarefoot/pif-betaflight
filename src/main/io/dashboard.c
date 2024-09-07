@@ -556,8 +556,8 @@ static void showTasksPage(void)
         if (taskInfo.isEnabled && taskId != TASK_SERIAL) {// don't waste a line of the display showing serial taskInfo
             const int taskFrequency = (int)(1000000.0f / ((float)taskInfo.latestDeltaTimeUs));
             const int maxLoad = taskInfo.maxExecutionTimeUs == 0 ? 0 : (taskInfo.maxExecutionTimeUs * taskFrequency) / 1000;
-            const int averageLoad = taskInfo.averageExecutionTime10thUs == 0 ? 0 : (taskInfo.averageExecutionTime10thUs * taskFrequency) / 10000;
-            tfp_sprintf(lineBuffer, format, taskId, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10, maxLoad, averageLoad);
+            const int averageLoad = taskInfo.averageExecutionTimeUs == 0 ? 0 : (taskInfo.averageExecutionTimeUs * taskFrequency) / 1000;
+            tfp_sprintf(lineBuffer, format, taskId, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTimeUs, maxLoad, averageLoad);
             padLineBuffer();
             i2c_OLED_set_line(dev, rowIndex++);
             i2c_OLED_send_string(dev, lineBuffer);
@@ -643,22 +643,24 @@ void dashboardSetPage(pageId_e pageId)
     pageState.pageFlags |= PAGE_STATE_FLAG_FORCE_PAGE_CHANGE;
 }
 
-void dashboardUpdate(timeUs_t currentTimeUs)
+uint16_t dashboardUpdate(PifTask *p_task)
 {
     static uint8_t previousArmedState = 0;
 
+    UNUSED(p_task);
+
 #ifdef USE_CMS
     if (displayIsGrabbed(displayPort)) {
-        return;
+        return 0;
     }
 #endif
 
-    const bool updateNow = (int32_t)(currentTimeUs - nextDisplayUpdateAt) >= 0L;
+    const bool updateNow = (int32_t)(pif_timer1us - nextDisplayUpdateAt) >= 0L;
     if (!updateNow) {
-        return;
+        return 0;
     }
 
-    nextDisplayUpdateAt = currentTimeUs + DISPLAY_UPDATE_FREQUENCY;
+    nextDisplayUpdateAt = pif_timer1us + DISPLAY_UPDATE_FREQUENCY;
 
     bool armedState = ARMING_FLAG(ARMED) ? true : false;
     bool armedStateChanged = armedState != previousArmedState;
@@ -666,7 +668,7 @@ void dashboardUpdate(timeUs_t currentTimeUs)
 
     if (armedState) {
         if (!armedStateChanged) {
-            return;
+            return 0;
         }
         dashboardSetPage(PAGE_ARMED);
         pageState.pageChanging = true;
@@ -676,7 +678,7 @@ void dashboardUpdate(timeUs_t currentTimeUs)
         }
 
         pageState.pageChanging = (pageState.pageFlags & PAGE_STATE_FLAG_FORCE_PAGE_CHANGE) ||
-                (((int32_t)(currentTimeUs - pageState.nextPageAt) >= 0L && (pageState.pageFlags & PAGE_STATE_FLAG_CYCLE_ENABLED)));
+                (((int32_t)(pif_timer1us - pageState.nextPageAt) >= 0L && (pageState.pageFlags & PAGE_STATE_FLAG_CYCLE_ENABLED)));
         if (pageState.pageChanging && (pageState.pageFlags & PAGE_STATE_FLAG_CYCLE_ENABLED)) {
 
             do {
@@ -689,7 +691,7 @@ void dashboardUpdate(timeUs_t currentTimeUs)
 
     if (pageState.pageChanging) {
         pageState.pageFlags &= ~PAGE_STATE_FLAG_FORCE_PAGE_CHANGE;
-        pageState.nextPageAt = currentTimeUs + PAGE_CYCLE_FREQUENCY;
+        pageState.nextPageAt = pif_timer1us + PAGE_CYCLE_FREQUENCY;
 
         // Some OLED displays do not respond on the first initialisation so refresh the display
         // when the page changes in the hopes the hardware responds.  This also allows the
@@ -697,13 +699,13 @@ void dashboardUpdate(timeUs_t currentTimeUs)
         resetDisplay();
 
         if (!dashboardPresent) {
-            return;
+            return 0;
         }
         handlePageChange();
     }
 
     if (!dashboardPresent) {
-        return;
+        return 0;
     }
 
     pageState.page->drawFn();
@@ -713,7 +715,7 @@ void dashboardUpdate(timeUs_t currentTimeUs)
         updateRxStatus();
         updateTicker();
     }
-
+    return 0;
 }
 
 void dashboardInit(void)
@@ -743,7 +745,7 @@ void dashboardInit(void)
     dashboardSetPage(PAGE_WELCOME);
 
     uint32_t now = micros();
-    dashboardUpdate(now);
+    dashboardUpdate(NULL);
 
     dashboardSetNextPageChangeAt(now + PAGE_CYCLE_FREQUENCY);
 }

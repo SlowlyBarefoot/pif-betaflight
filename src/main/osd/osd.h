@@ -340,7 +340,7 @@ extern escSensorData_t *osdEscDataCombined;
 
 void osdInit(displayPort_t *osdDisplayPort, osdDisplayPortDevice_e displayPortDevice);
 bool osdUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs);
-void osdUpdate(timeUs_t currentTimeUs);
+uint16_t osdUpdate(PifTask *p_task);
 
 void osdStatSetState(uint8_t statIndex, bool enabled);
 bool osdStatGetState(uint8_t statIndex);

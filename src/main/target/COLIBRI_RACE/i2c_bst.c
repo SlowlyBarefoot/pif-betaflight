@@ -717,14 +717,16 @@ static uint32_t next20hzUpdateAt_1 = 0;
 
 static uint8_t sendCounter = 0;
 
-void taskBstMasterProcess(timeUs_t currentTimeUs)
+uint16_t taskBstMasterProcess(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     if (coreProReady) {
-        if (currentTimeUs >= next02hzUpdateAt_1 && !bstWriteBusy()) {
+        if (pif_timer1us >= next02hzUpdateAt_1 && !bstWriteBusy()) {
             writeFCModeToBST();
-            next02hzUpdateAt_1 = currentTimeUs + UPDATE_AT_02HZ;
+            next02hzUpdateAt_1 = pif_timer1us + UPDATE_AT_02HZ;
         }
-        if (currentTimeUs >= next20hzUpdateAt_1 && !bstWriteBusy()) {
+        if (pif_timer1us >= next20hzUpdateAt_1 && !bstWriteBusy()) {
             if (sendCounter == 0)
                 writeRCChannelToBST();
             else if (sendCounter == 1)
@@ -732,7 +734,7 @@ void taskBstMasterProcess(timeUs_t currentTimeUs)
             sendCounter++;
             if (sendCounter > 1)
                 sendCounter = 0;
-            next20hzUpdateAt_1 = currentTimeUs + UPDATE_AT_20HZ;
+            next20hzUpdateAt_1 = pif_timer1us + UPDATE_AT_20HZ;
         }
 #ifdef USE_GPS
         if (sensors(SENSOR_GPS) && !bstWriteBusy())
@@ -745,7 +747,8 @@ void taskBstMasterProcess(timeUs_t currentTimeUs)
         stopMotors();
         systemReset();
     }
-    resetBstChecker(currentTimeUs);
+    resetBstChecker(pif_timer1us);
+    return 0;
 }
 
 /*************************************************************************************************/

@@ -763,24 +763,26 @@ static void updateGpsIndicator(timeUs_t currentTimeUs)
     }
 }
 
-void gpsUpdate(timeUs_t currentTimeUs)
+uint16_t gpsUpdate(PifTask *p_task)
 {
     static gpsState_e gpsStateDurationUs[GPS_STATE_COUNT];
     timeUs_t executeTimeUs;
     gpsState_e gpsCurrentState = gpsData.state;
 
+    UNUSED(p_task);
+
     // read out available GPS bytes
     if (gpsPort) {
         while (serialRxBytesWaiting(gpsPort)) {
-            if (cmpTimeUs(micros(), currentTimeUs) > GPS_MAX_WAIT_DATA_RX) {
+            if (cmpTimeUs(micros(), pif_timer1us) > GPS_MAX_WAIT_DATA_RX) {
                 // Wait 1ms and come back
-                rescheduleTask(TASK_SELF, TASK_PERIOD_HZ(TASK_GPS_RATE_FAST));
-                return;
+                rescheduleTask(TASK_GPS, TASK_PERIOD_HZ(TASK_GPS_RATE_FAST));
+                return 0;
             }
             gpsNewData(serialRead(gpsPort));
         }
         // Restore default task rate
-        rescheduleTask(TASK_SELF, TASK_PERIOD_HZ(TASK_GPS_RATE));
+        rescheduleTask(TASK_GPS, TASK_PERIOD_HZ(TASK_GPS_RATE));
    } else if (GPS_update & GPS_MSP_UPDATE) { // GPS data received via MSP
         gpsSetState(GPS_STATE_RECEIVING_DATA);
         onGpsNewData();
@@ -860,7 +862,7 @@ void gpsUpdate(timeUs_t currentTimeUs)
             break;
     }
 
-    executeTimeUs = micros() - currentTimeUs;
+    executeTimeUs = micros() - pif_timer1us;
 
     if (executeTimeUs > gpsStateDurationUs[gpsCurrentState]) {
         gpsStateDurationUs[gpsCurrentState] = executeTimeUs;
@@ -868,7 +870,7 @@ void gpsUpdate(timeUs_t currentTimeUs)
     schedulerSetNextStateTime(gpsStateDurationUs[gpsData.state]);
 
     if (sensors(SENSOR_GPS)) {
-        updateGpsIndicator(currentTimeUs);
+        updateGpsIndicator(pif_timer1us);
     }
     if (!ARMING_FLAG(ARMED) && !gpsConfig()->gps_set_home_point_once) {
         DISABLE_STATE(GPS_FIX_HOME);
@@ -893,6 +895,7 @@ void gpsUpdate(timeUs_t currentTimeUs)
     } else {
         hasFix = false;
     }
+    return 0;
 }
 
 static void gpsNewData(uint16_t c)
@@ -1734,7 +1737,7 @@ static void gpsHandlePassthrough(uint8_t data)
      gpsNewData(data);
  #ifdef USE_DASHBOARD
      if (featureIsEnabled(FEATURE_DASHBOARD)) {
-         dashboardUpdate(micros());
+         dashboardUpdate(NULL);
      }
  #endif
 

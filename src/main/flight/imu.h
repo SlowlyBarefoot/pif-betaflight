@@ -70,7 +70,7 @@ void imuConfigure(uint16_t throttle_correction_angle, uint8_t throttle_correctio
 
 float getCosTiltAngle(void);
 void getQuaternion(quaternion * q);
-void imuUpdateAttitude(timeUs_t currentTimeUs);
+uint16_t imuUpdateAttitude(PifTask *p_task);
 
 void imuInit(void);
 

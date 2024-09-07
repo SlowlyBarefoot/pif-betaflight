@@ -4,7 +4,7 @@
 #include "core/pif_timer.h"
 
 
-#define TASK_SIZE				30
+#define TASK_SIZE				35
 #define TIMER_1MS_SIZE			3
 
 

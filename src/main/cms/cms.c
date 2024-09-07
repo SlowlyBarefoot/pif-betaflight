@@ -1499,11 +1499,14 @@ static void cmsUpdate(uint32_t currentTimeUs)
     lastCalledMs = millis();
 }
 
-void cmsHandler(timeUs_t currentTimeUs)
+uint16_t cmsHandler(PifTask *p_task)
 {
+    UNUSED(p_task);
+
     if (cmsDeviceCount > 0) {
-        cmsUpdate(currentTimeUs);
+        cmsUpdate(pif_timer1us);
     }
+    return 0;
 }
 
 void cmsInit(void)

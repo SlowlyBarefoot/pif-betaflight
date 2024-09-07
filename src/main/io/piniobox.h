@@ -21,5 +21,5 @@
 #include "pg/piniobox.h"
 
 void pinioBoxInit(const pinioBoxConfig_t *pinioBoxConfig);
-void pinioBoxUpdate(timeUs_t currentTimeUs);
+uint16_t pinioBoxUpdate(PifTask *p_task);
 void pinioBoxTaskControl(void);

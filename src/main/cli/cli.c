@@ -27,7 +27,6 @@
 #include <ctype.h>
 
 #include "platform.h"
-#include "pif_linker.h"
 
 // FIXME remove this for targets that don't need a CLI.  Perhaps use a no-op macro when USE_CLI is not enabled
 // signal that we're in cli mode
@@ -4763,8 +4762,6 @@ static void cliStatus(const char *cmdName, char *cmdline)
     cliPrintf(" (%s%s)", SYSCLKSource[sysclkSource], (sysclkSource < 2) ? "" : PLLSource[pllSource]);
 #endif
 
-    cliPrintf("Task Count: %d / %d, Timer Count: %d / %d\r\n", pifTaskManager_Count(), TASK_SIZE, pifTimerManager_Count(&g_timer_1ms), TIMER_1MS_SIZE);
-
 #ifdef USE_ADC_INTERNAL
     uint16_t vrefintMv = getVrefMv();
     int16_t coretemp = getCoreTemperatureCelsius();
@@ -4772,6 +4769,8 @@ static void cliStatus(const char *cmdName, char *cmdline)
 #else
     cliPrintLinefeed();
 #endif
+
+    cliPrintLinef("Task Count: %d / %d, Timer Count: %d / %d", pifTaskManager_Count(), TASK_SIZE, pifTimerManager_Count(&g_timer_1ms), TIMER_1MS_SIZE);
 
     // Stack and config sizes and usages
 
@@ -4917,11 +4916,7 @@ static void cliTasks(const char *cmdName, char *cmdline)
 
 #ifndef MINIMAL_CLI
     if (systemConfig()->task_statistics) {
-#if defined(USE_LATE_TASK_STATISTICS)
-        cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms   late    run reqd/us");
-#else
         cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms");
-#endif
     } else {
         cliPrintLine("Task list");
     }
@@ -4930,26 +4925,18 @@ static void cliTasks(const char *cmdName, char *cmdline)
         taskInfo_t taskInfo;
         getTaskInfo(taskId, &taskInfo);
         if (taskInfo.isEnabled) {
-            int taskFrequency = taskInfo.averageDeltaTime10thUs == 0 ? 0 : lrintf(1e7f / taskInfo.averageDeltaTime10thUs);
+            int taskFrequency = taskInfo.averageDeltaTimeUs == 0 ? 0 : lrintf(1e6f / taskInfo.averageDeltaTimeUs);
             cliPrintf("%02d - (%15s) ", taskId, taskInfo.taskName);
             const int maxLoad = taskInfo.maxExecutionTimeUs == 0 ? 0 : (taskInfo.maxExecutionTimeUs * taskFrequency) / 1000;
-            const int averageLoad = taskInfo.averageExecutionTime10thUs == 0 ? 0 : (taskInfo.averageExecutionTime10thUs * taskFrequency) / 10000;
+            const int averageLoad = taskInfo.averageExecutionTimeUs == 0 ? 0 : (taskInfo.averageExecutionTimeUs * taskFrequency) / 1000;
             if (taskId != TASK_SERIAL) {
                 averageLoadSum += averageLoad;
             }
             if (systemConfig()->task_statistics) {
-#if defined(USE_LATE_TASK_STATISTICS)
-                cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d %6d %6d %7d",
-                        taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10,
-                        maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
-                        taskInfo.totalExecutionTimeUs / 1000,
-                        taskInfo.lateCount, taskInfo.runCount, taskInfo.execTime);
-#else
                 cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d",
-                        taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10,
+                        taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTimeUs,
                         maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
                         taskInfo.totalExecutionTimeUs / 1000);
-#endif
             } else {
                 cliPrintLinef("%6d", taskFrequency);
             }
@@ -4958,16 +4945,12 @@ static void cliTasks(const char *cmdName, char *cmdline)
         }
     }
     if (systemConfig()->task_statistics) {
-        cfCheckFuncInfo_t checkFuncInfo;
-        getCheckFuncInfo(&checkFuncInfo);
-        cliPrintLinef("RX Check Function %19d %7d %25d", checkFuncInfo.maxExecutionTimeUs, checkFuncInfo.averageExecutionTimeUs, checkFuncInfo.totalExecutionTimeUs / 1000);
         cliPrintLinef("Total (excluding SERIAL) %33d.%1d%%", averageLoadSum/10, averageLoadSum%10);
         if (debugMode == DEBUG_SCHEDULER_DETERMINISM) {
             extern int32_t schedLoopStartCycles, taskGuardCycles;
 
             cliPrintLinef("Scheduler start cycles %d guard cycles %d", schedLoopStartCycles, taskGuardCycles);
         }
-        schedulerResetCheckFunctionMaxExecutionTime();
     }
 }
 
