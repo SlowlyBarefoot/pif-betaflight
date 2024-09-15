@@ -646,6 +646,9 @@ void init(void)
     persistentObjectWrite(PERSISTENT_OBJECT_RTC_LOW, 0);
 #endif
 
+    pifImuSensor_Init(&g_imu_sensor);
+    pifImuSensor_InitBoardAlignment(&g_imu_sensor, boardAlignment()->rollDegrees, boardAlignment()->pitchDegrees, boardAlignment()->yawDegrees);
+
 #ifdef USE_I2C
     i2cHardwareConfigure(i2cConfig(0));
 
@@ -653,16 +656,16 @@ void init(void)
     // I2C buses are initialized unconditionally if they are configured.
 
 #ifdef USE_I2C_DEVICE_1
-    i2cInit(I2CDEV_1);
+    initI2cDevice(I2CDEV_1);
 #endif
 #ifdef USE_I2C_DEVICE_2
-    i2cInit(I2CDEV_2);
+    initI2cDevice(I2CDEV_2);
 #endif
 #ifdef USE_I2C_DEVICE_3
-    i2cInit(I2CDEV_3);
+    initI2cDevice(I2CDEV_3);
 #endif
 #ifdef USE_I2C_DEVICE_4
-    i2cInit(I2CDEV_4);
+    initI2cDevice(I2CDEV_4);
 #endif
 #endif // USE_I2C
 

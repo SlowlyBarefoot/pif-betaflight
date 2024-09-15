@@ -207,10 +207,13 @@ COMMON_DEVICE_SRC = \
             $(DEVICE_STDPERIPH_SRC)
 
 PIF_SRC = \
+            ../../pif/source/communication/pif_i2c.c \
             ../../pif/source/core/pif.c \
             ../../pif/source/core/pif_obj_array.c \
             ../../pif/source/core/pif_task.c \
-            ../../pif/source/core/pif_timer.c
+            ../../pif/source/core/pif_timer.c \
+            ../../pif/source/sensor/pif_imu_sensor.c \
+			../../pif/source/sensor/pif_qmc5883.c
 
 COMMON_SRC := $(COMMON_SRC) $(COMMON_DEVICE_SRC) $(PIF_SRC)
 

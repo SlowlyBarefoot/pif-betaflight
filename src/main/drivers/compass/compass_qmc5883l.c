@@ -34,102 +34,50 @@
 #include "drivers/bus.h"
 #include "drivers/bus_i2c.h"
 #include "drivers/bus_i2c_busdev.h"
+#include "drivers/bus_i2c_impl.h"
 #include "drivers/sensor.h"
 #include "drivers/time.h"
 
 #include "compass.h"
 #include "compass_qmc5883l.h"
 
-#define QMC5883L_MAG_I2C_ADDRESS 0x0D
+#include "sensor/pif_qmc5883.h"
 
-// Registers
-#define QMC5883L_REG_CONF1 0x09
-#define QMC5883L_REG_CONF2 0x0A
 
-// data output rates for 5883L
-#define QMC5883L_ODR_10HZ  (0x00 << 2)
-#define QMC5883L_ODR_50HZ  (0x01 << 2)
-#define QMC5883L_ODR_100HZ (0x02 << 2)
-#define QMC5883L_ODR_200HZ (0x03 << 2)
+static PifQmc5883 qmc5883;
 
-// Sensor operation modes
-#define QMC5883L_MODE_STANDBY    0x00
-#define QMC5883L_MODE_CONTINUOUS 0x01
-
-#define QMC5883L_RNG_2G (0x00 << 4)
-#define QMC5883L_RNG_8G (0x01 << 4)
-
-#define QMC5883L_OSR_512 (0x00 << 6)
-#define QMC5883L_OSR_256 (0x01 << 6)
-#define QMC5883L_OSR_128 (0x10 << 6)
-#define QMC5883L_OSR_64  (0x11 << 6)
-
-#define QMC5883L_RST 0x80
-
-#define QMC5883L_REG_DATA_OUTPUT_X 0x00
-#define QMC5883L_REG_STATUS 0x06
-
-#define QMC5883L_REG_ID 0x0D
-#define QMC5883_ID_VAL 0xFF
 
 static bool qmc5883lInit(magDev_t *magDev)
 {
-    bool ack = true;
+    PifQmc5883Control1 control_1;
     extDevice_t *dev = &magDev->dev;
 
     busDeviceRegister(dev);
 
-    ack = ack && busWriteRegister(dev, 0x0B, 0x01);
-    ack = ack && busWriteRegister(dev, QMC5883L_REG_CONF1, QMC5883L_MODE_CONTINUOUS | QMC5883L_ODR_200HZ | QMC5883L_OSR_512 | QMC5883L_RNG_8G);
+    if (!pifQmc5883_Init(&qmc5883, PIF_ID_AUTO, &i2cDevice[dev->bus->busType_u.i2c.device].i2c_port, &g_imu_sensor)) return false;
 
-    if (!ack) {
-        return false;
-    }
+    control_1.bit.mode = QMC5883_MODE_CONTIMUOUS;
+    control_1.bit.odr = QMC5883_ODR_200HZ;
+    control_1.bit.rng = QMC5883_RNG_8G;
+    control_1.bit.osr = QMC5883_OSR_512;
+    pifQmc5883_SetControl1(&qmc5883, control_1);
 
     return true;
 }
 
 static bool qmc5883lRead(magDev_t *magDev, int16_t *magData)
 {
-    static uint8_t buf[6];
-    static uint8_t status;
-    static enum {
-        STATE_READ_STATUS,
-        STATE_WAIT_STATUS,
-        STATE_WAIT_READ,
-    } state = STATE_READ_STATUS;
+    float buf[3];
 
-    extDevice_t *dev = &magDev->dev;
+    UNUSED(magDev);
 
-    switch (state) {
-        default:
-        case STATE_READ_STATUS:
-            busReadRegisterBufferStart(dev, QMC5883L_REG_STATUS, &status, sizeof(status));
-            state = STATE_WAIT_STATUS;
-            return false;
+    if (!pifImuSensor_ReadRawMag(&g_imu_sensor, buf)) return false;
 
-        case STATE_WAIT_STATUS:
-            if ((status & 0x04) == 0) {
-                state = STATE_READ_STATUS;
-                return false;
-            }
+    magData[X] = (int16_t)buf[0];
+    magData[Y] = (int16_t)buf[1];
+    magData[Z] = (int16_t)buf[2];
 
-            busReadRegisterBufferStart(dev, QMC5883L_REG_DATA_OUTPUT_X, buf, sizeof(buf));
-            state = STATE_WAIT_READ;
-            return false;
-
-        case STATE_WAIT_READ:
-
-            magData[X] = (int16_t)(buf[1] << 8 | buf[0]);
-            magData[Y] = (int16_t)(buf[3] << 8 | buf[2]);
-            magData[Z] = (int16_t)(buf[5] << 8 | buf[4]);
-
-            state = STATE_READ_STATUS;
-
-            return true;
-    }
-
-    return false;
+    return true;
 }
 
 bool qmc5883lDetect(magDev_t *magDev)
@@ -138,22 +86,10 @@ bool qmc5883lDetect(magDev_t *magDev)
     extDevice_t *dev = &magDev->dev;
 
     if (dev->bus->busType == BUS_TYPE_I2C && dev->busType_u.i2c.address == 0) {
-        dev->busType_u.i2c.address = QMC5883L_MAG_I2C_ADDRESS;
+        dev->busType_u.i2c.address = QMC5883_I2C_ADDR;
     }
 
-    // Must write reset first  - don't care about the result
-    busWriteRegister(dev, QMC5883L_REG_CONF2, QMC5883L_RST);
-    delay(20);
-
-    uint8_t sig = 0;
-    bool ack = busReadRegisterBuffer(dev, QMC5883L_REG_ID, &sig, 1);
-    if (ack && sig == QMC5883_ID_VAL) {
-        // Should be in standby mode after soft reset and sensor is really present
-        // Reading ChipID of 0xFF alone is not sufficient to be sure the QMC is present
-        ack = busReadRegisterBuffer(dev, QMC5883L_REG_CONF1, &sig, 1);
-        if (ack && sig != QMC5883L_MODE_STANDBY) {
-            return false;
-        }
+    if (pifQmc5883_Detect(&i2cDevice[dev->bus->busType_u.i2c.device].i2c_port)) {
         magDev->init = qmc5883lInit;
         magDev->read = qmc5883lRead;
         return true;

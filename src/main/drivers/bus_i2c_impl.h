@@ -92,6 +92,9 @@ typedef struct i2cDevice_s {
 #ifdef USE_HAL_DRIVER
     I2C_HandleTypeDef handle;
 #endif
+
+    /* PIF */
+    PifI2cPort i2c_port;
 } i2cDevice_t;
 
 extern i2cDevice_t i2cDevice[];

@@ -323,6 +323,8 @@ bool compassInit(void)
         magDev.magAlignment = compassConfig()->mag_alignment;
     }
 
+    pifImuSensor_SetMagAlign(&g_imu_sensor, alignment);
+
     buildRotationMatrixFromAlignment(&compassConfig()->mag_customAlignment, &magDev.rotationMatrix);
 
     return true;

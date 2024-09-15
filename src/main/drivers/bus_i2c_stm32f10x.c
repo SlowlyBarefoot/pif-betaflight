@@ -547,4 +547,34 @@ static void i2cUnstick(IO_t scl, IO_t sda)
     IOHi(sda); // Set bus sda high
 }
 
+static PifI2cReturn actI2cWrite(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+{
+    i2cDevice_t *pDev = (i2cDevice_t *)p_owner->_p_port->_p_client;
+
+    (void)isize;
+
+    return (i2cWriteBuffer(pDev->hardware->device, p_owner->addr, iaddr, size, p_data) && i2cWait(pDev->hardware->device)) ? IR_COMPLETE : IR_ERROR;
+}
+
+static PifI2cReturn actI2cRead(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+{
+    i2cDevice_t *pDev = (i2cDevice_t *)p_owner->_p_port->_p_client;
+
+    (void)isize;
+
+    return (i2cReadBuffer(pDev->hardware->device, p_owner->addr, iaddr, size, p_data) && i2cWait(pDev->hardware->device)) ? IR_COMPLETE : IR_ERROR;
+}
+
+BOOL initI2cDevice(I2CDevice index)
+{
+    i2cDevice_t *pDev = &i2cDevice[index];
+
+    i2cInit(index);
+
+    if (!pifI2cPort_Init(&pDev->i2c_port, PIF_ID_AUTO, 5, 16, pDev)) return FALSE;
+    pDev->i2c_port.act_read = actI2cRead;
+    pDev->i2c_port.act_write = actI2cWrite;
+    return TRUE;
+}
+
 #endif

@@ -310,6 +310,8 @@
 #define USE_MAG_MPU925X_AK8963
 #define USE_MAG_SPI_AK8963
 #define USE_MAG_AK8975
+
+#define MAG_QMC5883L_ALIGN CW0_DEG
 #endif
 
 #ifdef USE_BARO
