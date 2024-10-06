@@ -49,18 +49,13 @@ static PifQmc5883 qmc5883;
 
 static bool qmc5883lInit(magDev_t *magDev)
 {
-    PifQmc5883Control1 control_1;
     extDevice_t *dev = &magDev->dev;
 
     busDeviceRegister(dev);
 
     if (!pifQmc5883_Init(&qmc5883, PIF_ID_AUTO, &i2cDevice[dev->bus->busType_u.i2c.device].i2c_port, &g_imu_sensor)) return false;
 
-    control_1.bit.mode = QMC5883_MODE_CONTIMUOUS;
-    control_1.bit.odr = QMC5883_ODR_200HZ;
-    control_1.bit.rng = QMC5883_RNG_8G;
-    control_1.bit.osr = QMC5883_OSR_512;
-    pifQmc5883_SetControl1(&qmc5883, control_1);
+    pifQmc5883_SetControl1(&qmc5883, QMC5883_MODE_CONTIMUOUS | QMC5883_ODR_200HZ | QMC5883_RNG_8G | QMC5883_OSR_512);
 
     return true;
 }
