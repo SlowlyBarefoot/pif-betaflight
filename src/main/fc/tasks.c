@@ -537,7 +537,9 @@ void tasksInit(void)
 #endif
 
 #ifdef USE_BARO
-    setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO));
+    if (detectedSensors[SENSOR_INDEX_BARO] != BARO_DPS310) {
+        setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO));
+    }
 #endif
 
 #if defined(USE_BARO) || defined(USE_GPS)

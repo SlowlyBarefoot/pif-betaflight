@@ -23,6 +23,8 @@
 #include "drivers/bus.h" // XXX
 #include "drivers/exti.h"
 
+#include "sensor/pif_sensor_event.h"
+
 struct baroDev_s;
 
 typedef void (*baroOpFuncPtr)(struct baroDev_s *baro);                       // baro start operation
@@ -45,4 +47,7 @@ typedef struct baroDev_s {
     baroGetFuncPtr read_up;
     baroGetFuncPtr get_up;
     baroCalculateFuncPtr calculate;
+
+    /* PIF */
+    PifEvtBaroRead evt_read;
 } baroDev_t;

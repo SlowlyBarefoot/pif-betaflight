@@ -25,6 +25,8 @@
 #include "drivers/io_types.h"
 #include "drivers/rcc_types.h"
 
+#include "communication/pif_i2c.h"
+
 #define I2C_TIMEOUT_US          10000
 #define I2C_TIMEOUT_SYS_TICKS   (I2C_TIMEOUT_US / 1000)
 

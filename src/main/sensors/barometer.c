@@ -56,7 +56,9 @@
 
 #include "barometer.h"
 
-baro_t baro;                        // barometer access functions
+static void evtBaroRead(float pressure, float temperature);
+
+baro_t baro = { .dev.evt_read = &evtBaroRead };     // barometer access functions
 
 PG_REGISTER_WITH_RESET_FN(barometerConfig_t, barometerConfig, PG_BAROMETER_CONFIG, 1);
 
@@ -474,6 +476,19 @@ uint32_t baroUpdate(timeUs_t currentTimeUs)
     schedulerSetNextStateTime(baroStateDurationUs[state]);
 
     return sleepTime;
+}
+
+static void evtBaroRead(float pressure, float temperature)
+{
+    if (sensors(SENSOR_BARO)) {
+        baroPressure = pressure;
+        baroTemperature = temperature;
+        baroPressureSum = recalculateBarometerTotal(baroPressureSum, baroPressure);
+
+        DEBUG_SET(DEBUG_BARO, 1, baroTemperature);
+        DEBUG_SET(DEBUG_BARO, 2, baroPressure);
+        DEBUG_SET(DEBUG_BARO, 3, baroPressureSum);
+    }
 }
 
 static float pressureToAltitude(const float pressure)

@@ -8,6 +8,9 @@
 #define TASK_SIZE				35
 #define TIMER_1MS_SIZE			3
 
+#define DISALLOW_YIELD_ID_I2C   1
+#define DISALLOW_YIELD_ID_SPI   2
+
 
 extern PifImuSensor g_imu_sensor;
 extern PifTimerManager g_timer_1ms;

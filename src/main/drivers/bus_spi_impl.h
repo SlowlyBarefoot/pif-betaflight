@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "communication/pif_spi.h"
+
 #define SPI_TIMEOUT_US  10000
 
 #if defined(STM32F1) || defined(STM32F3) || defined(STM32F4) || defined(STM32G4)
@@ -79,11 +81,16 @@ typedef struct SPIDevice_s {
 #ifdef USE_DMA
     uint8_t dmaIrqHandler;
 #endif
+
+    const extDevice_t *extDev;
+
+    /* PIF */
+    PifSpiPort spi_port;
 } spiDevice_t;
 
 extern spiDevice_t spiDevice[SPIDEV_COUNT];
 
-void spiInitDevice(SPIDevice device);
+spiDevice_t *spiInitDevice(SPIDevice device);
 void spiInternalInitStream(const extDevice_t *dev, bool preInit);
 void spiInternalStartDMA(const extDevice_t *dev);
 void spiInternalStopDMA (const extDevice_t *dev);

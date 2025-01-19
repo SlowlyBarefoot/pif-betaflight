@@ -125,12 +125,12 @@ static uint32_t spiDivisorToBRbits(SPI_TypeDef *instance, uint16_t divisor)
 #endif
 }
 
-void spiInitDevice(SPIDevice device)
+spiDevice_t *spiInitDevice(SPIDevice device)
 {
     spiDevice_t *spi = &spiDevice[device];
 
     if (!spi->dev) {
-        return;
+        return NULL;
     }
 
     // Enable SPI clock
@@ -160,6 +160,8 @@ void spiInitDevice(SPIDevice device)
     LL_SPI_Init(spi->dev, &defaultInit);
     LL_SPI_Enable(spi->dev);
 #endif
+
+    return spi;
 }
 
 void spiInternalResetDescriptors(busDevice_t *bus)

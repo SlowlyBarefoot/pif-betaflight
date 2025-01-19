@@ -74,12 +74,12 @@ static void spiSetDivisorBRreg(SPI_TypeDef *instance, uint16_t divisor)
 }
 
 
-void spiInitDevice(SPIDevice device)
+spiDevice_t *spiInitDevice(SPIDevice device)
 {
     spiDevice_t *spi = &(spiDevice[device]);
 
     if (!spi->dev) {
-        return;
+        return NULL;
     }
 
     // Enable SPI clock
@@ -100,6 +100,8 @@ void spiInitDevice(SPIDevice device)
     SPI_I2S_DMACmd(spi->dev, SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx, DISABLE);
     SPI_Init(spi->dev, &defaultInit);
     SPI_Cmd(spi->dev, ENABLE);
+
+    return spi;
 }
 
 void spiInternalResetDescriptors(busDevice_t *bus)

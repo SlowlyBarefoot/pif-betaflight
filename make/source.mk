@@ -208,10 +208,14 @@ COMMON_DEVICE_SRC = \
 
 PIF_SRC = \
             ../../pif/source/communication/pif_i2c.c \
+            ../../pif/source/communication/pif_spi.c \
             ../../pif/source/core/pif.c \
             ../../pif/source/core/pif_obj_array.c \
             ../../pif/source/core/pif_task.c \
             ../../pif/source/core/pif_timer.c \
+            ../../pif/source/sensor/pif_dps310.c \
+            ../../pif/source/sensor/pif_dps310_i2c.c \
+            ../../pif/source/sensor/pif_dps310_spi.c \
             ../../pif/source/sensor/pif_imu_sensor.c \
 			../../pif/source/sensor/pif_qmc5883.c
 

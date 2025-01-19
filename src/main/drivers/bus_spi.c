@@ -96,61 +96,96 @@ SPI_TypeDef *spiInstanceByDevice(SPIDevice device)
     return spiDevice[device].dev;
 }
 
+static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_read, uint16_t size)
+{
+    // This routine blocks so no need to use static data
+    busSegment_t segments[] = {
+            {.u.buffers = {NULL, NULL}, 0, false, NULL},
+            {.u.link = {NULL, NULL}, 0, true, NULL},
+    };
+    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+
+    if (!spi->extDev) return;
+
+	if (p_write) {
+		if (p_read) {
+            segments[0].u.buffers.txData = p_write;
+            segments[0].u.buffers.rxData = p_read;
+            segments[0].len = size;
+		}
+		else {
+            segments[0].u.buffers.txData = p_write;
+            segments[0].len = size;
+		}
+	}
+	else {
+		if (p_read) {
+            segments[0].u.buffers.rxData = p_read;
+            segments[0].len = size;
+		}
+	}
+
+    spiSequence(spi->extDev, &segments[0]);
+
+    spiWait(spi->extDev);
+}
+
 bool spiInit(SPIDevice device)
 {
+    spiDevice_t *spi;
+
     switch (device) {
     case SPIINVALID:
         return false;
 
     case SPIDEV_1:
 #ifdef USE_SPI_DEVICE_1
-        spiInitDevice(device);
-        return true;
-#else
-        break;
+        spi = spiInitDevice(device);
+        if (spi) goto next;
 #endif
+        break;
 
     case SPIDEV_2:
 #ifdef USE_SPI_DEVICE_2
-        spiInitDevice(device);
-        return true;
-#else
-        break;
+        spi = spiInitDevice(device);
+        if (spi) goto next;
 #endif
+        break;
 
     case SPIDEV_3:
 #if defined(USE_SPI_DEVICE_3) && !defined(STM32F1)
-        spiInitDevice(device);
-        return true;
-#else
-        break;
+        spi = spiInitDevice(device);
+        if (spi) goto next;
 #endif
+        break;
 
     case SPIDEV_4:
 #if defined(USE_SPI_DEVICE_4)
-        spiInitDevice(device);
-        return true;
-#else
-        break;
+        spi = spiInitDevice(device);
+        if (spi) goto next;
 #endif
+        break;
 
     case SPIDEV_5:
 #if defined(USE_SPI_DEVICE_5)
-        spiInitDevice(device);
-        return true;
-#else
-        break;
+        spi = spiInitDevice(device);
+        if (spi) goto next;
 #endif
+        break;
 
     case SPIDEV_6:
 #if defined(USE_SPI_DEVICE_6)
-        spiInitDevice(device);
-        return true;
-#else
-        break;
+        spi = spiInitDevice(device);
+        if (spi) goto next;
 #endif
+        break;
     }
     return false;
+
+next:
+    if (!pifSpiPort_Init(&spi->spi_port, PIF_ID_AUTO, 5, 32, spi)) return false;
+    spi->spi_port.act_transfer = actSpiTransfer;
+    return true;
 }
 
 // Return true if DMA engine is busy
@@ -512,6 +547,7 @@ bool spiSetBusInstance(extDevice_t *dev, uint32_t device)
     }
 
     dev->bus = &spiBusDevice[SPI_CFG_TO_DEV(device)];
+    spiDevice[SPI_CFG_TO_DEV(device)].extDev = dev;
 
     // By default each device should use SPI DMA if the bus supports it
     dev->useDMA = true;
