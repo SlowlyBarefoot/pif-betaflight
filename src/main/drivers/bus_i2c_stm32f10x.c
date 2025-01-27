@@ -571,7 +571,7 @@ BOOL initI2cDevice(I2CDevice index)
 
     i2cInit(index);
 
-    if (!pifI2cPort_Init(&pDev->i2c_port, PIF_ID_AUTO, 5, 16, pDev)) return FALSE;
+    if (!pifI2cPort_Init(&pDev->i2c_port, PIF_ID_AUTO, 5, pDev)) return FALSE;
     pDev->i2c_port.act_read = actI2cRead;
     pDev->i2c_port.act_write = actI2cWrite;
     return TRUE;

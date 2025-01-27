@@ -53,7 +53,7 @@ static bool qmc5883lInit(magDev_t *magDev)
 
     busDeviceRegister(dev);
 
-    if (!pifQmc5883_Init(&qmc5883, PIF_ID_AUTO, &i2cDevice[dev->bus->busType_u.i2c.device].i2c_port, &g_imu_sensor)) return false;
+    if (!pifQmc5883_Init(&qmc5883, PIF_ID_AUTO, &i2cDevice[dev->bus->busType_u.i2c.device].i2c_port, 16, &g_imu_sensor)) return false;
 
     pifQmc5883_SetControl1(&qmc5883, QMC5883_MODE_CONTIMUOUS | QMC5883_ODR_200HZ | QMC5883_RNG_8G | QMC5883_OSR_512);
 
@@ -84,7 +84,7 @@ bool qmc5883lDetect(magDev_t *magDev)
         dev->busType_u.i2c.address = QMC5883_I2C_ADDR;
     }
 
-    if (pifQmc5883_Detect(&i2cDevice[dev->bus->busType_u.i2c.device].i2c_port)) {
+    if (pifQmc5883_Detect(&i2cDevice[dev->bus->busType_u.i2c.device].i2c_port, 16)) {
         magDev->init = qmc5883lInit;
         magDev->read = qmc5883lRead;
         return true;

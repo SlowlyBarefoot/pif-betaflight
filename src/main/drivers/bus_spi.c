@@ -183,7 +183,7 @@ bool spiInit(SPIDevice device)
     return false;
 
 next:
-    if (!pifSpiPort_Init(&spi->spi_port, PIF_ID_AUTO, 5, 32, spi)) return false;
+    if (!pifSpiPort_Init(&spi->spi_port, PIF_ID_AUTO, SPIDEV_COUNT, spi)) return false;
     spi->spi_port.act_transfer = actSpiTransfer;
     return true;
 }
