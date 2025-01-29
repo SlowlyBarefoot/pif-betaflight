@@ -70,10 +70,10 @@ static bool deviceDetect(const extDevice_t *dev)
         delay(100);
 
         if (dev->bus->busType == BUS_TYPE_I2C) {
-            if (pifDps310I2c_Detect(p_i2c_port, dev->busType_u.i2c.address, 32)) return true;
+            if (pifDps310I2c_Detect(p_i2c_port, dev->busType_u.i2c.address)) return true;
         }
         else if (dev->bus->busType == BUS_TYPE_SPI) {
-            if (pifDps310Spi_Detect(p_spi_port, 32)) return true;
+            if (pifDps310Spi_Detect(p_spi_port)) return true;
         }
     };
 
@@ -137,7 +137,7 @@ bool baroDPS310Detect(baroDev_t *baro)
     }
 
     if (dev->bus->busType == BUS_TYPE_I2C) {
-        if (!pifDps310I2c_Init(&dps310, PIF_ID_AUTO, p_i2c_port, dev->busType_u.i2c.address, 32)) {
+        if (!pifDps310I2c_Init(&dps310, PIF_ID_AUTO, p_i2c_port, dev->busType_u.i2c.address)) {
             deviceDeInit(dev);
             return false;
         }
@@ -145,7 +145,7 @@ bool baroDPS310Detect(baroDev_t *baro)
     }
 #ifdef USE_BARO_SPI_DPS310
     else if (dev->bus->busType == BUS_TYPE_SPI) {
-        if (!pifDps310Spi_Init(&dps310, PIF_ID_AUTO, p_spi_port, 32)) {
+        if (!pifDps310Spi_Init(&dps310, PIF_ID_AUTO, p_spi_port)) {
             deviceDeInit(dev);
             return false;
         }

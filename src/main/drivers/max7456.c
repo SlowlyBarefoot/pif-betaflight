@@ -254,7 +254,7 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
 
     p_spi_port = &spiDevice[SPI_CFG_TO_DEV(max7456Config->spiDevice)].spi_port;
 
-    if (!pifMax7456_Init(&max7456, PIF_ID_AUTO, p_spi_port, 1000)) return MAX7456_INIT_NOT_CONFIGURED;
+    if (!pifMax7456_Init(&max7456, PIF_ID_AUTO, p_spi_port)) return MAX7456_INIT_NOT_CONFIGURED;
 
     deviceBackgroundType = DISPLAY_BACKGROUND_TRANSPARENT;
 
