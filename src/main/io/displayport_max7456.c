@@ -65,8 +65,10 @@ static int clearScreen(displayPort_t *displayPort, displayClearOption_e options)
     UNUSED(displayPort);
     UNUSED(options);
 
-    max7456Invert(displayPortProfileMax7456()->invert);
-    max7456Brightness(displayPortProfileMax7456()->blackBrightness, displayPortProfileMax7456()->whiteBrightness);
+    if (pifMax7456_Invert(&max7456, displayPortProfileMax7456()->invert)) {
+        max7456ClearShadowBuffer();
+    }
+    pifMax7456_Brightness(&max7456, displayPortProfileMax7456()->blackBrightness, displayPortProfileMax7456()->whiteBrightness);
 
     max7456ClearScreen();
 
@@ -163,13 +165,13 @@ static bool writeFontCharacter(displayPort_t *displayPort, uint16_t addr, const 
 {
     UNUSED(displayPort);
 
-    return max7456WriteNvm(addr, (const uint8_t *)chr);
+    return pifMax7456_WriteNvm(&max7456, addr, (const uint8_t *)chr);
 }
 
 static bool checkReady(displayPort_t *displayPort, bool rescan)
 {
     UNUSED(displayPort);
-    if (!max7456IsDeviceDetected()) {
+    if (!max7456.detected) {
         if (!rescan) {
             return false;
         } else {

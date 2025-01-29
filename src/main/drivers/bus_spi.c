@@ -100,7 +100,7 @@ static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_r
 {
     // This routine blocks so no need to use static data
     busSegment_t segments[] = {
-            {.u.buffers = {NULL, NULL}, 0, false, NULL},
+            {.u.buffers = {NULL, NULL}, 0, true, NULL},
             {.u.link = {NULL, NULL}, 0, true, NULL},
     };
     spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
@@ -123,11 +123,59 @@ static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_r
             segments[0].u.buffers.rxData = p_read;
             segments[0].len = size;
 		}
+        else {
+            return;
+        }
 	}
 
     spiSequence(spi->extDev, &segments[0]);
 
     spiWait(spi->extDev);
+}
+
+BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+{
+    // This routine blocks so no need to use static data
+    busSegment_t segments[] = {
+            {.u.buffers = {(uint8_t *)&iaddr, NULL}, isize, false, NULL},
+            {.u.buffers = {NULL, p_data}, size, true, NULL},
+            {.u.link = {NULL, NULL}, 0, true, NULL},
+    };
+    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+
+    if (!spi->extDev) return FALSE;
+
+    spiSequence(spi->extDev, &segments[0]);
+
+    spiWait(spi->extDev);
+    return TRUE;
+}
+
+BOOL actSpiWrite(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+{
+    // This routine blocks so no need to use static data
+    busSegment_t segments[] = {
+            {.u.buffers = {(uint8_t *)&iaddr, NULL}, isize, false, NULL},
+            {.u.buffers = {p_data, NULL}, size, true, NULL},
+            {.u.link = {NULL, NULL}, 0, true, NULL},
+    };
+    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+
+    if (!spi->extDev) return FALSE;
+
+    spiSequence(spi->extDev, &segments[0]);
+
+    spiWait(spi->extDev);
+    return TRUE;
+}
+
+BOOL actSpiIsBusy(PifSpiDevice *p_owner)
+{
+    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+
+    if (!spi->extDev) return FALSE;
+
+    return spiIsBusy(spi->extDev);
 }
 
 bool spiInit(SPIDevice device)
@@ -185,6 +233,9 @@ bool spiInit(SPIDevice device)
 next:
     if (!pifSpiPort_Init(&spi->spi_port, PIF_ID_AUTO, SPIDEV_COUNT, spi)) return false;
     spi->spi_port.act_transfer = actSpiTransfer;
+    spi->spi_port.act_read = actSpiRead;
+    spi->spi_port.act_write = actSpiWrite;
+    spi->spi_port.act_is_busy = actSpiIsBusy;
     return true;
 }
 
