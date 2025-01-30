@@ -214,6 +214,8 @@ PIF_SRC = \
             ../../pif/source/core/pif_task.c \
             ../../pif/source/core/pif_timer.c \
             ../../pif/source/osd/pif_max7456.c \
+            ../../pif/source/rc/pif_rc.c \
+            ../../pif/source/rc/pif_rc_ppm.c \
             ../../pif/source/sensor/pif_dps310.c \
             ../../pif/source/sensor/pif_dps310_i2c.c \
             ../../pif/source/sensor/pif_dps310_spi.c \
