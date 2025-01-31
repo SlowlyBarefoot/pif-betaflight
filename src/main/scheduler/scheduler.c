@@ -192,6 +192,7 @@ void setTaskEnabled(taskId_e taskId, bool enabled)
                 task->p_task = pifTaskManager_Add(task->attribute->pifTaskMode, 0, task->attribute->pifTaskFunc, task, false);
                 break;
             }
+            task->p_task->name = task->attribute->taskName;
         } 
         else {
             pifTaskManager_Remove(task->p_task);

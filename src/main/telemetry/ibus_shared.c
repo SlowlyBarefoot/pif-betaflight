@@ -37,8 +37,6 @@
 #include "telemetry/telemetry.h"
 #include "telemetry/ibus_shared.h"
 
-static uint16_t calculateChecksum(const uint8_t *ibusPacket);
-
 #if defined(USE_TELEMETRY_IBUS)
 #include "config/feature.h"
 #include "pg/pg.h"
@@ -59,8 +57,6 @@ static uint16_t calculateChecksum(const uint8_t *ibusPacket);
 
 #define IBUS_TEMPERATURE_OFFSET     400
 #define INVALID_IBUS_ADDRESS        0
-#define IBUS_BUFFSIZE               33 // biggest iBus message seen so far + 1
-#define IBUS_HEADER_FOOTER_SIZE     4
 #define IBUS_2BYTE_SESNSOR          2
 #define IBUS_4BYTE_SESNSOR          4
 
@@ -126,10 +122,9 @@ const uint8_t FULL_ACC_IDS[] = {
 
 static serialPort_t *ibusSerialPort = NULL;
 static ibusAddress_t ibusBaseAddress = INVALID_IBUS_ADDRESS;
-static uint8_t sendBuffer[IBUS_BUFFSIZE];
 
 
-static void setValue(uint8_t* bufferPtr, uint8_t sensorType, uint8_t length);
+static void setValue(PifRcIbusSensorinfo *p_sensor, uint8_t sensorType, uint8_t length);
 
 static uint8_t getSensorID(ibusAddress_t address)
 {
@@ -176,36 +171,10 @@ static uint8_t getSensorLength(uint8_t sensorType)
     return IBUS_2BYTE_SESNSOR;
 }
 
-static uint8_t transmitIbusPacket()
+static void setIbusSensorType(ibusAddress_t address, PifRcIbusSensorinfo *p_sensor)
 {
-    unsigned frameLength = sendBuffer[0];
-    if (frameLength == INVALID_IBUS_ADDRESS) {
-        return 0;
-    }
-    unsigned payloadLength = frameLength - IBUS_CHECKSUM_SIZE;
-    uint16_t checksum = calculateChecksum(sendBuffer);
-    for (unsigned i = 0; i < payloadLength; i++) {
-        serialWrite(ibusSerialPort, sendBuffer[i]);
-    }
-    serialWrite(ibusSerialPort, checksum & 0xFF);
-    serialWrite(ibusSerialPort, checksum >> 8);
-    return frameLength;
-}
-
-static void setIbusDiscoverSensorReply(ibusAddress_t address)
-{
-    sendBuffer[0] = IBUS_HEADER_FOOTER_SIZE;
-    sendBuffer[1] = IBUS_COMMAND_DISCOVER_SENSOR | address;
-}
-
-static void setIbusSensorType(ibusAddress_t address)
-{
-    uint8_t sensorID = getSensorID(address);
-    uint8_t sensorLength = getSensorLength(sensorID);
-    sendBuffer[0] = IBUS_HEADER_FOOTER_SIZE + 2;
-    sendBuffer[1] = IBUS_COMMAND_SENSOR_TYPE | address;
-    sendBuffer[2] = sensorID;
-    sendBuffer[3] = sensorLength;
+    p_sensor->type = getSensorID(address);
+    p_sensor->length = getSensorLength(p_sensor->type);
 }
 
 static uint16_t getVoltage()
@@ -278,14 +247,13 @@ static int16_t getACC(uint8_t index)
 #endif
 
 #if defined(USE_TELEMETRY_IBUS_EXTENDED)
-static void setCombinedFrame(uint8_t* bufferPtr, const uint8_t* structure, uint8_t itemCount)
+static void setCombinedFrame(PifRcIbusSensorinfo *p_sensor, const uint8_t* structure, uint8_t itemCount)
 {
-    uint8_t offset = 0;
     uint8_t size = 0;
     for (unsigned i = 0; i < itemCount; i++) {
         size = getSensorLength(structure[i]);
-        setValue(bufferPtr + offset, structure[i], size);
-        offset += size;
+        setValue(p_sensor, structure[i], size);
+        p_sensor->offset += size;
     }
 }
 #endif
@@ -346,7 +314,7 @@ static bool setGPS(uint8_t sensorType, ibusTelemetry_s* value)
 }
 #endif //defined(USE_GPS)
 
-static void setValue(uint8_t* bufferPtr, uint8_t sensorType, uint8_t length)
+static void setValue(PifRcIbusSensorinfo *p_sensor, uint8_t sensorType, uint8_t length)
 {
     ibusTelemetry_s value;
 
@@ -354,18 +322,18 @@ static void setValue(uint8_t* bufferPtr, uint8_t sensorType, uint8_t length)
     uint8_t itemCount;
     const uint8_t* structure = getSensorStruct(sensorType, &itemCount);
     if (structure != 0) {
-        setCombinedFrame(bufferPtr, structure, itemCount);
+        setCombinedFrame(p_sensor, structure, itemCount);
         return;
     }
 #endif //defined(USE_TELEMETRY_IBUS_EXTENDED)
     //clear result
     for (unsigned i = 0; i < length; i++) {
-        bufferPtr[i] = value.byte[i] = 0;
+        p_sensor->value[p_sensor->offset + i] = value.byte[i] = 0;
     }
 #if defined(USE_GPS)
     if (setGPS(sensorType, &value)) {
         for (unsigned i = 0; i < length; i++) {
-            bufferPtr[i] = value.byte[i];
+            p_sensor->value[p_sensor->offset + i] = value.byte[i];
         }
         return;
     }
@@ -432,26 +400,15 @@ static void setValue(uint8_t* bufferPtr, uint8_t sensorType, uint8_t length)
 #endif //defined(TELEMETRY_IBUS_EXTENDED)
     }
     for (unsigned i = 0; i < length; i++) {
-        bufferPtr[i] = value.byte[i];
+        p_sensor->value[p_sensor->offset + i] = value.byte[i];
     }
 }
-static void setIbusMeasurement(ibusAddress_t address)
+static void setIbusMeasurement(ibusAddress_t address, PifRcIbusSensorinfo *p_sensor)
 {
-    uint8_t sensorID = getSensorID(address);
-    uint8_t sensorLength = getSensorLength(sensorID);
-    sendBuffer[0] = IBUS_HEADER_FOOTER_SIZE + sensorLength;
-    sendBuffer[1] = IBUS_COMMAND_MEASUREMENT | address;
-    setValue(sendBuffer + 2, sensorID, sensorLength);
-}
-
-static bool isCommand(ibusCommand_e expected, const uint8_t *ibusPacket)
-{
-    return (ibusPacket[1] & 0xF0) == expected;
-}
-
-static ibusAddress_t getAddress(const uint8_t *ibusPacket)
-{
-    return (ibusPacket[1] & 0x0F);
+    p_sensor->type = getSensorID(address);
+    p_sensor->length = getSensorLength(p_sensor->type);
+    p_sensor->offset = 0;
+    setValue(p_sensor, p_sensor->type, p_sensor->length);
 }
 
 static void autodetectFirstReceivedAddressAsBaseAddress(ibusAddress_t returnAddress)
@@ -469,24 +426,19 @@ static bool theAddressIsWithinOurRange(ibusAddress_t returnAddress)
     telemetryConfig()->flysky_sensors[(returnAddress - ibusBaseAddress)] != IBUS_SENSOR_TYPE_NONE;
 }
 
-uint8_t respondToIbusRequest(uint8_t const * const ibusPacket)
+void respondToIbusRequest(PifRcIbus* p_owner, uint8_t command, uint8_t address, PifRcIbusSensorinfo *p_sensor)
 {
-    ibusAddress_t returnAddress = getAddress(ibusPacket);
-    autodetectFirstReceivedAddressAsBaseAddress(returnAddress);
-    //set buffer to invalid
-    sendBuffer[0] = INVALID_IBUS_ADDRESS;
+    (void)p_owner;
 
-    if (theAddressIsWithinOurRange(returnAddress)) {
-        if (isCommand(IBUS_COMMAND_DISCOVER_SENSOR, ibusPacket)) {
-            setIbusDiscoverSensorReply(returnAddress);
-        } else if (isCommand(IBUS_COMMAND_SENSOR_TYPE, ibusPacket)) {
-            setIbusSensorType(returnAddress);
-        } else if (isCommand(IBUS_COMMAND_MEASUREMENT, ibusPacket)) {
-            setIbusMeasurement(returnAddress);
+    autodetectFirstReceivedAddressAsBaseAddress(address);
+
+    if (theAddressIsWithinOurRange(address)) {
+        if (command == IBUS_COMMAND_TYPE) {
+            setIbusSensorType(address, p_sensor);
+        } else if (command == IBUS_COMMAND_VALUE) {
+            setIbusMeasurement(address, p_sensor);
         }
     }
-    //transmit if content was set
-    return transmitIbusPacket();
 }
 
 
@@ -498,23 +450,3 @@ void initSharedIbusTelemetry(serialPort_t *port)
 
 
 #endif //defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
-
-static uint16_t calculateChecksum(const uint8_t *ibusPacket)
-{
-    uint16_t checksum = 0xFFFF;
-    uint8_t dataSize = ibusPacket[0] - IBUS_CHECKSUM_SIZE;
-    for (unsigned i = 0; i < dataSize; i++) {
-        checksum -= ibusPacket[i];
-    }
-
-    return checksum;
-}
-
-bool isChecksumOkIa6b(const uint8_t *ibusPacket, const uint8_t length)
-{
-    uint16_t calculatedChecksum = calculateChecksum(ibusPacket);
-
-    // Note that there's a byte order swap to little endian here
-    return (calculatedChecksum >> 8) == ibusPacket[length - 1]
-           && (calculatedChecksum & 0xFF) == ibusPacket[length - 2];
-}

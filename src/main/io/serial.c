@@ -452,6 +452,10 @@ void closeSerialPort(serialPort_t *serialPort)
         return;
     }
 
+    if (serialPort->uart._id) {
+        pifUart_Clear(&serialPort->uart);
+    }
+
     // TODO wait until data has been transmitted.
     serialPort->rxCallback = NULL;
 

@@ -4908,6 +4908,53 @@ static void cliStatus(const char *cmdName, char *cmdline)
     cliPrintLinefeed();
 }
 
+void pifTaskCallback(PifTask *p_owner)
+{
+	char* mode;
+#ifdef PIF_USE_TASK_STATISTICS
+	uint32_t value;
+#endif
+
+    if (p_owner->name) {
+        cliPrintf("  %s", p_owner->name);
+    }
+    else {
+        cliPrintf("  ---");
+    }
+    switch (p_owner->_mode) {
+        case TM_RATIO: mode = "Ratio"; break;
+        case TM_ALWAYS: mode = "Always"; break;
+        case TM_PERIOD_MS: mode = "PeriodMs"; break;
+        case TM_PERIOD_US: mode = "PeriodUs"; break;
+        case TM_CHANGE_MS: mode = "ChangeMs"; break;
+        case TM_CHANGE_US: mode = "ChangeUs"; break;
+        case TM_EXTERNAL_CUTIN: mode = "ExtCutin"; break;
+        case TM_EXTERNAL_ORDER: mode = "ExtOrder"; break;
+        case TM_TIMER: mode = "Timer"; break;
+        case TM_IDLE_MS: mode = "IdleMs"; break;
+        case TM_IDLE_US: mode = "IdleUs"; break;
+        default: mode = "---"; break;
+    }
+    cliPrintf(" (%u): %s-%u\n", p_owner->_id, mode, p_owner->_default_period);
+#ifdef PIF_USE_TASK_STATISTICS
+    value = p_owner->__sum_execution_time[0] + p_owner->__sum_execution_time[1];
+    cliPrintf("    Proc: M=%ldus A=%luus T=%lums\n", p_owner->_max_execution_time,
+            (p_owner->__execution_count ? value / p_owner->__execution_count : 0), value / 1000);
+
+    value = p_owner->__total_delta_time[0] + p_owner->__total_delta_time[1];
+    if (value) {
+        cliPrintf("    Delta: %luus\n", value / p_owner->__execution_count);
+    }
+
+    value = p_owner->__total_trigger_delay[0] + p_owner->__total_trigger_delay[1];
+    if (value) {
+        cliPrintf("    Trigger: M=%luus A=%luus\n", p_owner->_max_trigger_delay,
+                (p_owner->__trigger_count ? value / p_owner->__trigger_count : 0));
+    }
+    cliPrintLinefeed();
+#endif
+}
+
 static void cliTasks(const char *cmdName, char *cmdline)
 {
     UNUSED(cmdName);
@@ -4952,6 +4999,10 @@ static void cliTasks(const char *cmdName, char *cmdline)
             cliPrintLinef("Scheduler start cycles %d guard cycles %d", schedLoopStartCycles, taskGuardCycles);
         }
     }
+
+    cliPrintLinefeed();
+   	cliPrintLinef("Task count: %d\n", pifTaskManager_Count());
+    pifTaskManager_AllTask(pifTaskCallback);
 }
 
 static void printVersion(const char *cmdName, bool printBoardInfo)

@@ -22,8 +22,7 @@
 
 void initIbusTelemetry(void);
 
-void handleIbusTelemetry(void);
 bool checkIbusTelemetryState(void);
 
-void configureIbusTelemetryPort(void);
+bool configureIbusTelemetryPort(void);
 void freeIbusTelemetryPort(void);

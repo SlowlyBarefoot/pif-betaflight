@@ -31,6 +31,8 @@
 #include "platform.h"
 #include "drivers/serial.h"
 
+#include "rc/pif_rc_ibus.h"
+
 #define IBUS_CHECKSUM_SIZE (2)
 #define IBUS_SENSOR_COUNT 15
 
@@ -80,10 +82,7 @@ typedef enum {
 
 #if defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
 
-uint8_t respondToIbusRequest(uint8_t const * const ibusPacket);
+void respondToIbusRequest(PifRcIbus *p_owner, uint8_t command, uint8_t address, PifRcIbusSensorinfo *p_sensor);
 void initSharedIbusTelemetry(serialPort_t * port);
 
 #endif //defined(TELEMETRY) && defined(TELEMETRY_IBUS)
-
-
-bool isChecksumOkIa6b(const uint8_t *ibusPacket, const uint8_t length);
