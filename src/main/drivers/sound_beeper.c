@@ -39,6 +39,8 @@ static uint16_t beeperFrequency = 0;
 static pwmOutputPort_t beeperPwm;
 static uint16_t freqBeep = 0;
 
+PifBuzzer g_buzzer;
+
 static void pwmWriteBeeper(bool on)
 {
     if (!beeperPwm.io) {
@@ -80,6 +82,16 @@ static void beeperPwmInit(const ioTag_t tag, uint16_t frequency)
     }
 }
 #endif
+
+static void actBuzzerAction(BOOL action)
+{
+    if (action) {
+        systemBeep(true); 
+    } 
+    else {
+        systemBeep(false);
+    }
+}
 #endif
 
 void systemBeep(bool onoff)
@@ -131,6 +143,11 @@ void beeperInit(const beeperDevConfig_t *config)
         beeperPwmInit(beeperTag, beeperFrequency);
     }
 #endif
+
+    if (!pifBuzzer_Init(&g_buzzer, PIF_ID_AUTO, 10, actBuzzerAction)) return;   // 10ms
+    g_buzzer.evt_period = evtBuzzerPeriod;
+    g_buzzer.evt_change = evtBuzzerChange;
+    g_buzzer.evt_finish = evtBuzzerFinish;
 #else
     UNUSED(config);
 #endif

@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "sound/pif_buzzer.h"
+
 #ifdef USE_BEEPER
 #define BEEP_TOGGLE              systemBeepToggle()
 #define BEEP_OFF                 systemBeep(false)
@@ -30,7 +32,13 @@
 #define BEEP_ON     do {} while (0)
 #endif
 
+extern PifBuzzer g_buzzer;
+
 void systemBeep(bool on);
 void systemBeepToggle(void);
 struct beeperDevConfig_s;
 void beeperInit(const struct beeperDevConfig_s *beeperDevConfig);
+
+void evtBuzzerPeriod(PifId id);
+void evtBuzzerChange(PifId id, BOOL state);
+void evtBuzzerFinish(PifId id);

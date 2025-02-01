@@ -60,6 +60,8 @@
 
 #include "beeper.h"
 
+#include "sound/pif_buzzer.h"
+
 #ifdef BEEPER_INVERTED
 #define IS_OPEN_DRAIN   false
 #define IS_INVERTED     true
@@ -79,9 +81,6 @@
 
 #define MAX_MULTI_BEEPS 64   //size limit for 'beep_multiBeeps[]'
 
-#define BEEPER_COMMAND_REPEAT 0xFE
-#define BEEPER_COMMAND_STOP   0xFF
-
 #ifdef USE_DSHOT
 static timeUs_t lastDshotBeaconCommandTimeUs;
 #endif
@@ -97,79 +96,79 @@ static timeUs_t lastDshotBeaconCommandTimeUs;
  */
 // short fast beep
 static const uint8_t beep_shortBeep[] = {
-    10, 10, BEEPER_COMMAND_STOP
+    10, 10, PIF_BUZZER_STOP
 };
 // arming beep
 static const uint8_t beep_armingBeep[] = {
-    30, 5, 5, 5, BEEPER_COMMAND_STOP
+    30, 5, 5, 5, PIF_BUZZER_STOP
 };
 // Arming when GPS is fixed
 static const uint8_t beep_armingGpsFix[] = {
-    5, 5, 15, 5, 5, 5, 15, 30, BEEPER_COMMAND_STOP
+    5, 5, 15, 5, 5, 5, 15, 30, PIF_BUZZER_STOP
 };
 // Arming when GPS is not fixed
 static const uint8_t beep_armingGpsNoFix[] = {
-    30, 5, 30, 5, 30, 5, BEEPER_COMMAND_STOP
+    30, 5, 30, 5, 30, 5, PIF_BUZZER_STOP
 };
 // armed beep (first pause, then short beep)
 static const uint8_t beep_armedBeep[] = {
-    0, 245, 10, 5, BEEPER_COMMAND_STOP
+    0, 245, 10, 5, PIF_BUZZER_STOP
 };
 // disarming beeps
 static const uint8_t beep_disarmBeep[] = {
-    15, 5, 15, 5, BEEPER_COMMAND_STOP
+    15, 5, 15, 5, PIF_BUZZER_STOP
 };
 // beeps while stick held in disarm position (after pause)
 static const uint8_t beep_disarmRepeatBeep[] = {
-    0, 100, 10, BEEPER_COMMAND_STOP
+    0, 100, 10, PIF_BUZZER_STOP
 };
 // Long beep and pause after that
 static const uint8_t beep_lowBatteryBeep[] = {
-    25, 50, BEEPER_COMMAND_STOP
+    25, 50, PIF_BUZZER_STOP
 };
 // critical battery beep
 static const uint8_t beep_critBatteryBeep[] = {
-    50, 2, BEEPER_COMMAND_STOP
+    50, 2, PIF_BUZZER_STOP
 };
 
 // transmitter-signal-lost tone
 static const uint8_t beep_txLostBeep[] = {
-    50, 50, BEEPER_COMMAND_STOP
+    50, 50, PIF_BUZZER_STOP
 };
 // SOS morse code:
 static const uint8_t beep_sos[] = {
-    10, 10, 10, 10, 10, 40, 40, 10, 40, 10, 40, 40, 10, 10, 10, 10, 10, 70, BEEPER_COMMAND_STOP
+    10, 10, 10, 10, 10, 40, 40, 10, 40, 10, 40, 40, 10, 10, 10, 10, 10, 70, PIF_BUZZER_STOP
 };
 // Ready beeps. When gps has fix and copter is ready to fly.
 static const uint8_t beep_readyBeep[] = {
-    4, 5, 4, 5, 8, 5, 15, 5, 8, 5, 4, 5, 4, 5, BEEPER_COMMAND_STOP
+    4, 5, 4, 5, 8, 5, 15, 5, 8, 5, 4, 5, 4, 5, PIF_BUZZER_STOP
 };
 // 2 fast short beeps
 static const uint8_t beep_2shortBeeps[] = {
-    5, 5, 5, 5, BEEPER_COMMAND_STOP
+    5, 5, 5, 5, PIF_BUZZER_STOP
 };
 // 2 longer beeps
 static const uint8_t beep_2longerBeeps[] = {
-    20, 15, 35, 5, BEEPER_COMMAND_STOP
+    20, 15, 35, 5, PIF_BUZZER_STOP
 };
 // 3 beeps
 static const uint8_t beep_gyroCalibrated[] = {
-    20, 10, 20, 10, 20, 10, BEEPER_COMMAND_STOP
+    20, 10, 20, 10, 20, 10, PIF_BUZZER_STOP
 };
 
 // Cam connection opened
 static const uint8_t beep_camOpenBeep[] = {
-    5, 15, 10, 15, 20, BEEPER_COMMAND_STOP
+    5, 15, 10, 15, 20, PIF_BUZZER_STOP
 };
 
 // Cam connection close
 static const uint8_t beep_camCloseBeep[] = {
-    10, 8, 5, BEEPER_COMMAND_STOP
+    10, 8, 5, PIF_BUZZER_STOP
 };
 
 // RC Smoothing filter not initialized - 3 short + 1 long
 static const uint8_t beep_rcSmoothingInitFail[] = {
-    10, 10, 10, 10, 10, 10, 50, 25, BEEPER_COMMAND_STOP
+    10, 10, 10, 10, 10, 10, 50, 25, PIF_BUZZER_STOP
 };
 
 // array used for variable # of beeps (reporting GPS sat count, etc)
@@ -180,20 +179,8 @@ static uint8_t beep_multiBeeps[MAX_MULTI_BEEPS + 1];
 
 #define BEEPER_WARNING_LONG_BEEP_MULTIPLIER 5
 
-#define BEEPER_WARNING_BEEP_1_DURATION 20
-#define BEEPER_WARNING_BEEP_2_DURATION 5
-#define BEEPER_WARNING_BEEP_GAP_DURATION 10
-
-static bool beeperIsOn = false;
-
-// Place in current sequence
-static uint16_t beeperPos = 0;
-// Time when beeper routine must act next time
-static uint32_t beeperNextToggleTime = 0;
 // Time of last arming beep in microseconds (for blackbox)
 static uint32_t armingBeepTimeMicros = 0;
-
-static void beeperProcessCommand(timeUs_t currentTimeUs);
 
 typedef struct beeperTableEntry_s {
     uint8_t mode;
@@ -276,22 +263,16 @@ void beeper(beeperMode_e mode)
         return;
     }
 
-    currentBeeperEntry = selectedCandidate;
+    if (!(beeperConfig()->beeper_off_flags & BEEPER_GET_FLAG(selectedCandidate->mode))) {
+        currentBeeperEntry = selectedCandidate;
 
-    beeperPos = 0;
-    beeperNextToggleTime = 0;
+        pifBuzzer_Start(&g_buzzer, currentBeeperEntry->sequence);
+    }
 }
 
 void beeperSilence(void)
 {
-    BEEP_OFF;
-    beeperIsOn = false;
-
-    warningLedDisable();
-    warningLedRefresh();
-
-    beeperNextToggleTime = 0;
-    beeperPos = 0;
+    pifBuzzer_Stop(&g_buzzer);
 
     currentBeeperEntry = NULL;
 }
@@ -311,7 +292,7 @@ void beeperConfirmationBeeps(uint8_t beepCount)
         beep_multiBeeps[i++] = BEEPER_CONFIRMATION_BEEP_DURATION;
         beep_multiBeeps[i++] = BEEPER_CONFIRMATION_BEEP_GAP_DURATION;
     } while (i < cLimit);
-    beep_multiBeeps[i] = BEEPER_COMMAND_STOP;
+    beep_multiBeeps[i] = PIF_BUZZER_STOP;
 
     beeper(BEEPER_MULTI_BEEPS);
 }
@@ -349,7 +330,7 @@ void beeperWarningBeeps(uint8_t beepCount)
         }
     }
 
-    beep_multiBeeps[i] = BEEPER_COMMAND_STOP;
+    beep_multiBeeps[i] = PIF_BUZZER_STOP;
 
     beeper(BEEPER_MULTI_BEEPS);
 }
@@ -367,7 +348,7 @@ static void beeperGpsStatus(void)
             } while (i < MAX_MULTI_BEEPS && gpsSol.numSat > i / 2);
 
             beep_multiBeeps[i - 1] = 50; // extend last pause
-            beep_multiBeeps[i] = BEEPER_COMMAND_STOP;
+            beep_multiBeeps[i] = PIF_BUZZER_STOP;
 
             beeper(BEEPER_MULTI_BEEPS);    //initiate sequence
         }
@@ -379,9 +360,9 @@ static void beeperGpsStatus(void)
  * Beeper handler function to be called periodically in loop. Updates beeper
  * state via time schedule.
  */
-uint16_t beeperUpdate(PifTask *p_task)
+void evtBuzzerPeriod(PifId id)
 {
-    UNUSED(p_task);
+    UNUSED(id);
 
     // If beeper option from AUX switch has been selected
     if (IS_RC_MODE_ACTIVE(BOXBEEPERON)) {
@@ -391,18 +372,13 @@ uint16_t beeperUpdate(PifTask *p_task)
         beeperGpsStatus();
 #endif
     }
+}
 
-    // Beeper routine doesn't need to update if there aren't any sounds ongoing
-    if (currentBeeperEntry == NULL) {
-        return 0;
-    }
+void evtBuzzerChange(PifId id, BOOL state)
+{
+	(void)id;
 
-    if (beeperNextToggleTime > pif_timer1us) {
-        schedulerIgnoreTaskExecTime();
-        return 0;
-    }
-
-    if (!beeperIsOn) {
+    if (state) {
 #ifdef USE_DSHOT
         if (!areMotorsRunning()
             && ((currentBeeperEntry->mode == BEEPER_RX_SET && !(beeperConfig()->dshotBeaconOffFlags & BEEPER_GET_FLAG(BEEPER_RX_SET)))
@@ -415,58 +391,35 @@ uint16_t beeperUpdate(PifTask *p_task)
         }
 #endif
 
-        if (currentBeeperEntry->sequence[beeperPos] != 0) {
-            if (!(beeperConfig()->beeper_off_flags & BEEPER_GET_FLAG(currentBeeperEntry->mode))) {
-                BEEP_ON;
-                beeperIsOn = true;
-            }
-
-            warningLedEnable();
-            warningLedRefresh();
-            // if this was arming beep then mark time (for blackbox)
-            if (
-                beeperPos == 0
-                && (currentBeeperEntry->mode == BEEPER_ARMING || currentBeeperEntry->mode == BEEPER_ARMING_GPS_FIX
-                || currentBeeperEntry->mode == BEEPER_ARMING_GPS_NO_FIX)) {
-                armingBeepTimeMicros = micros();
-            }
+        warningLedEnable();
+        warningLedRefresh();
+        // if this was arming beep then mark time (for blackbox)
+        if (
+            g_buzzer._state == BS_START
+            && (currentBeeperEntry->mode == BEEPER_ARMING || currentBeeperEntry->mode == BEEPER_ARMING_GPS_FIX
+            || currentBeeperEntry->mode == BEEPER_ARMING_GPS_NO_FIX)) {
+            armingBeepTimeMicros = micros();
         }
-    } else {
-        if (currentBeeperEntry->sequence[beeperPos] != 0) {
-            BEEP_OFF;
-            beeperIsOn = false;
-
-            warningLedDisable();
-            warningLedRefresh();
-        }
+    }
+    else {
+        warningLedDisable();
+        warningLedRefresh();
     }
 
 #if defined(USE_OSD)
     static bool beeperWasOn = false;
-    if (beeperIsOn && !beeperWasOn) {
+    if (state && !beeperWasOn) {
         osdSetVisualBeeperState(true);
     }
-    beeperWasOn = beeperIsOn;
+    beeperWasOn = state;
 #endif
-    
-    beeperProcessCommand(pif_timer1us);
-    return 0;
 }
 
-/*
- * Calculates array position when next to change beeper state is due.
- */
-static void beeperProcessCommand(timeUs_t currentTimeUs)
+void evtBuzzerFinish(PifId id)
 {
-    if (currentBeeperEntry->sequence[beeperPos] == BEEPER_COMMAND_REPEAT) {
-        beeperPos = 0;
-    } else if (currentBeeperEntry->sequence[beeperPos] == BEEPER_COMMAND_STOP) {
-        beeperSilence();
-    } else {
-        // Otherwise advance the sequence and calculate next toggle time
-        beeperNextToggleTime = currentTimeUs + 1000 * 10 * currentBeeperEntry->sequence[beeperPos];
-        beeperPos++;
-    }
+	(void)id;
+
+    currentBeeperEntry = NULL;
 }
 
 /*
@@ -520,7 +473,7 @@ int beeperTableEntryCount(void)
  */
 bool isBeeperOn(void)
 {
-    return beeperIsOn;
+    return pifBuzzer_State(&g_buzzer);
 }
 
 #else
@@ -530,7 +483,6 @@ void beeper(beeperMode_e mode) {UNUSED(mode);}
 void beeperSilence(void) {}
 void beeperConfirmationBeeps(uint8_t beepCount) {UNUSED(beepCount);}
 void beeperWarningBeeps(uint8_t beepCount) {UNUSED(beepCount);}
-uint16_t beeperUpdate(PifTask *p_task) {UNUSED(p_task); return 0;}
 uint32_t getArmingBeepTimeMicros(void) {return 0;}
 beeperMode_e beeperModeForTableIndex(int idx) {UNUSED(idx); return BEEPER_SILENCE;}
 uint32_t beeperModeMaskForTableIndex(int idx) {UNUSED(idx); return 0;}

@@ -223,7 +223,8 @@ PIF_SRC = \
             ../../pif/source/sensor/pif_dps310_i2c.c \
             ../../pif/source/sensor/pif_dps310_spi.c \
             ../../pif/source/sensor/pif_imu_sensor.c \
-			../../pif/source/sensor/pif_qmc5883.c
+			../../pif/source/sensor/pif_qmc5883.c \
+			../../pif/source/sound/pif_buzzer.c
 
 COMMON_SRC := $(COMMON_SRC) $(COMMON_DEVICE_SRC) $(PIF_SRC)
 

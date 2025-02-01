@@ -378,10 +378,6 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_RX] = DEFINE_TASK("RX", NULL, TM_PERIOD, taskUpdateRxMain, TASK_PERIOD_HZ(33)), // If event-based scheduling doesn't work, fallback to periodic scheduling
     [TASK_DISPATCH] = DEFINE_TASK("DISPATCH", NULL, TM_PERIOD, dispatchProcess, TASK_PERIOD_HZ(1000)),
 
-#ifdef USE_BEEPER
-    [TASK_BEEPER] = DEFINE_TASK("BEEPER", NULL, TM_PERIOD, beeperUpdate, TASK_PERIOD_HZ(100)),
-#endif
-
 #ifdef USE_GPS
     [TASK_GPS] = DEFINE_TASK("GPS", NULL, TM_PERIOD, gpsUpdate, TASK_PERIOD_HZ(TASK_GPS_RATE)), // Required to prevent buffer overruns if running at 115200 baud (115 bytes / period < 256 bytes buffer)
 #endif
@@ -523,10 +519,6 @@ void tasksInit(void)
     setTaskEnabled(TASK_RX, true);
 
     setTaskEnabled(TASK_DISPATCH, dispatchIsEnabled());
-
-#ifdef USE_BEEPER
-    setTaskEnabled(TASK_BEEPER, true);
-#endif
 
 #ifdef USE_GPS
     setTaskEnabled(TASK_GPS, featureIsEnabled(FEATURE_GPS));
