@@ -137,7 +137,6 @@ static uint8_t max7456DeviceType;
 
 static displayPortBackground_e deviceBackgroundType = DISPLAY_BACKGROUND_TRANSPARENT;
 
-static PifSpiPort *p_spi_port = NULL;
 PifMax7456 max7456;
 
 static uint8_t *getLayerBuffer(displayPortLayer_e layer)
@@ -252,10 +251,6 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
 {
     uint8_t data;
 
-    p_spi_port = &spiDevice[SPI_CFG_TO_DEV(max7456Config->spiDevice)].spi_port;
-
-    if (!pifMax7456_Init(&max7456, PIF_ID_AUTO, p_spi_port)) return MAX7456_INIT_NOT_CONFIGURED;
-
     deviceBackgroundType = DISPLAY_BACKGROUND_TRANSPARENT;
 
     // initialize all layers
@@ -285,6 +280,8 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
     // This register is not modified in this driver, therefore ensured to remain at its default value (0x1B).
 
     spiSetClkDivisor(dev, spiCalculateDivider(MAX7456_INIT_MAX_SPI_CLK_HZ));
+
+    if (!pifMax7456_Init(&max7456, PIF_ID_AUTO, dev->busType_u.spi.p_spi_port, dev)) return MAX7456_INIT_NOT_CONFIGURED;
 
     // Write 0xff to conclude any current SPI transaction the MAX7456 is expecting
     data = END_STRING;

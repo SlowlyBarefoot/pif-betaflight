@@ -549,20 +549,20 @@ static void i2cUnstick(IO_t scl, IO_t sda)
 
 static PifI2cReturn actI2cWrite(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
 {
-    i2cDevice_t *pDev = (i2cDevice_t *)p_owner->_p_port->_p_client;
+    I2CDevice index = PIF_ID_I2C_2_IDX(p_owner->_p_port->_id);
 
     (void)isize;
 
-    return (i2cWriteBuffer(pDev->hardware->device, p_owner->addr, iaddr, size, p_data) && i2cWait(pDev->hardware->device)) ? IR_COMPLETE : IR_ERROR;
+    return (i2cWriteBuffer(index, p_owner->addr, iaddr, size, p_data) && i2cWait(index)) ? IR_COMPLETE : IR_ERROR;
 }
 
 static PifI2cReturn actI2cRead(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
 {
-    i2cDevice_t *pDev = (i2cDevice_t *)p_owner->_p_port->_p_client;
+    I2CDevice index = PIF_ID_I2C_2_IDX(p_owner->_p_port->_id);
 
     (void)isize;
 
-    return (i2cReadBuffer(pDev->hardware->device, p_owner->addr, iaddr, size, p_data) && i2cWait(pDev->hardware->device)) ? IR_COMPLETE : IR_ERROR;
+    return (i2cReadBuffer(index, p_owner->addr, iaddr, size, p_data) && i2cWait(index)) ? IR_COMPLETE : IR_ERROR;
 }
 
 BOOL initI2cDevice(I2CDevice index)
@@ -571,7 +571,7 @@ BOOL initI2cDevice(I2CDevice index)
 
     i2cInit(index);
 
-    if (!pifI2cPort_Init(&pDev->i2c_port, PIF_ID_AUTO, 5, pDev)) return FALSE;
+    if (!pifI2cPort_Init(&pDev->i2c_port, PIF_ID_I2C(index), 5)) return FALSE;
     pDev->i2c_port.act_read = actI2cRead;
     pDev->i2c_port.act_write = actI2cWrite;
     return TRUE;

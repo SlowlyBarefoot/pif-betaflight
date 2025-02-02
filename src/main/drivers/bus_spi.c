@@ -103,9 +103,7 @@ static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_r
             {.u.buffers = {NULL, NULL}, 0, true, NULL},
             {.u.link = {NULL, NULL}, 0, true, NULL},
     };
-    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
-
-    if (!spi->extDev) return;
+    extDevice_t *dev = (extDevice_t *)p_owner->_p_client;
 
 	if (p_write) {
 		if (p_read) {
@@ -128,12 +126,12 @@ static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_r
         }
 	}
 
-    spiSequence(spi->extDev, &segments[0]);
+    spiSequence(dev, &segments[0]);
 
-    spiWait(spi->extDev);
+    spiWait(dev);
 }
 
-BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+static BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
 {
     // This routine blocks so no need to use static data
     busSegment_t segments[] = {
@@ -141,17 +139,15 @@ BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p
             {.u.buffers = {NULL, p_data}, size, true, NULL},
             {.u.link = {NULL, NULL}, 0, true, NULL},
     };
-    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+    extDevice_t *dev = (extDevice_t *)p_owner->_p_client;
 
-    if (!spi->extDev) return FALSE;
+    spiSequence(dev, &segments[0]);
 
-    spiSequence(spi->extDev, &segments[0]);
-
-    spiWait(spi->extDev);
+    spiWait(dev);
     return TRUE;
 }
 
-BOOL actSpiWrite(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+static BOOL actSpiWrite(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
 {
     // This routine blocks so no need to use static data
     busSegment_t segments[] = {
@@ -159,23 +155,19 @@ BOOL actSpiWrite(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *
             {.u.buffers = {p_data, NULL}, size, true, NULL},
             {.u.link = {NULL, NULL}, 0, true, NULL},
     };
-    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+    extDevice_t *dev = (extDevice_t *)p_owner->_p_client;
 
-    if (!spi->extDev) return FALSE;
+    spiSequence(dev, &segments[0]);
 
-    spiSequence(spi->extDev, &segments[0]);
-
-    spiWait(spi->extDev);
+    spiWait(dev);
     return TRUE;
 }
 
-BOOL actSpiIsBusy(PifSpiDevice *p_owner)
+static BOOL actSpiIsBusy(PifSpiDevice *p_owner)
 {
-    spiDevice_t *spi = (spiDevice_t *)p_owner->_p_port->_p_client;
+    extDevice_t *dev = (extDevice_t *)p_owner->_p_client;
 
-    if (!spi->extDev) return FALSE;
-
-    return spiIsBusy(spi->extDev);
+    return spiIsBusy(dev);
 }
 
 bool spiInit(SPIDevice device)
@@ -231,7 +223,7 @@ bool spiInit(SPIDevice device)
     return false;
 
 next:
-    if (!pifSpiPort_Init(&spi->spi_port, PIF_ID_AUTO, SPIDEV_COUNT, spi)) return false;
+    if (!pifSpiPort_Init(&spi->spi_port, PIF_ID_SPI(device), 3)) return false;
     spi->spi_port.act_transfer = actSpiTransfer;
     spi->spi_port.act_read = actSpiRead;
     spi->spi_port.act_write = actSpiWrite;
@@ -603,6 +595,8 @@ bool spiSetBusInstance(extDevice_t *dev, uint32_t device)
     // By default each device should use SPI DMA if the bus supports it
     dev->useDMA = true;
 
+    dev->busType_u.spi.p_spi_port = &spiDevice[SPI_CFG_TO_DEV(device)].spi_port;
+
     if (dev->bus->busType == BUS_TYPE_SPI) {
         // This bus has already been initialised
         dev->bus->deviceCount++;
@@ -622,7 +616,7 @@ bool spiSetBusInstance(extDevice_t *dev, uint32_t device)
     bus->deviceCount = 1;
     bus->initTx = &dev->initTx;
     bus->initRx = &dev->initRx;
-
+    
     return true;
 }
 

@@ -57,12 +57,10 @@
 
 #if defined(USE_BARO) && defined(USE_BARO_DPS310)
 
-static PifI2cPort *p_i2c_port = NULL;
-static PifSpiPort *p_spi_port = NULL;
 static PifDps310 dps310;
 
 #define DETECTION_MAX_RETRY_COUNT   5
-static bool deviceDetect(const extDevice_t *dev)
+static bool deviceDetect(const extDevice_t *dev, PifI2cPort *p_i2c_port)
 {
     (void)dev;
 
@@ -73,7 +71,7 @@ static bool deviceDetect(const extDevice_t *dev)
             if (pifDps310I2c_Detect(p_i2c_port, dev->busType_u.i2c.address)) return true;
         }
         else if (dev->bus->busType == BUS_TYPE_SPI) {
-            if (pifDps310Spi_Detect(p_spi_port)) return true;
+            if (pifDps310Spi_Detect(dev->busType_u.spi.p_spi_port)) return true;
         }
     };
 
@@ -111,6 +109,7 @@ bool baroDPS310Detect(baroDev_t *baro)
     extDevice_t *dev = &baro->dev;
     bool defaultAddressApplied = false;
     uint8_t disallow_yield_id;
+    PifI2cPort *p_i2c_port;
 
     if (!baro->evt_read) return false;
 
@@ -124,11 +123,11 @@ bool baroDPS310Detect(baroDev_t *baro)
     }
 #ifdef USE_BARO_SPI_DPS310
     else if (dev->bus->busType == BUS_TYPE_SPI) {
-        p_spi_port = &spiDevice[SPI_CFG_TO_DEV(barometerConfig()->baro_spi_device)].spi_port;
+        dev->busType_u.spi.p_spi_port = &spiDevice[SPI_CFG_TO_DEV(barometerConfig()->baro_spi_device)].spi_port;
     }
 #endif
 
-    if (!deviceDetect(dev)) {
+    if (!deviceDetect(dev, p_i2c_port)) {
         deviceDeInit(dev);
         if (defaultAddressApplied) {
             dev->busType_u.i2c.address = 0;
@@ -137,7 +136,7 @@ bool baroDPS310Detect(baroDev_t *baro)
     }
 
     if (dev->bus->busType == BUS_TYPE_I2C) {
-        if (!pifDps310I2c_Init(&dps310, PIF_ID_AUTO, p_i2c_port, dev->busType_u.i2c.address)) {
+        if (!pifDps310I2c_Init(&dps310, PIF_ID_AUTO, p_i2c_port, dev->busType_u.i2c.address, NULL)) {
             deviceDeInit(dev);
             return false;
         }
@@ -145,7 +144,7 @@ bool baroDPS310Detect(baroDev_t *baro)
     }
 #ifdef USE_BARO_SPI_DPS310
     else if (dev->bus->busType == BUS_TYPE_SPI) {
-        if (!pifDps310Spi_Init(&dps310, PIF_ID_AUTO, p_spi_port)) {
+        if (!pifDps310Spi_Init(&dps310, PIF_ID_AUTO, dev->busType_u.spi.p_spi_port, dev)) {
             deviceDeInit(dev);
             return false;
         }

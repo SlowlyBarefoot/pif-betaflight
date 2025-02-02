@@ -26,6 +26,8 @@
 #include "drivers/io_types.h"
 #include "drivers/dma.h"
 
+#include "communication/pif_spi.h"
+
 typedef enum {
     BUS_TYPE_NONE = 0,
     BUS_TYPE_I2C,
@@ -85,6 +87,7 @@ typedef struct extDevice_s {
             uint16_t speed;
             IO_t csnPin;
             bool leadingEdge;
+            PifSpiPort *p_spi_port;
         } spi;
         struct extI2C_s {
             uint8_t address;
