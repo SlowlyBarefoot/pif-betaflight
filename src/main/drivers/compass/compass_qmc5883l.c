@@ -84,7 +84,7 @@ bool qmc5883lDetect(magDev_t *magDev)
         dev->busType_u.i2c.address = QMC5883_I2C_ADDR;
     }
 
-    if (pifQmc5883_Detect(&i2cDevice[dev->bus->busType_u.i2c.device].i2c_port)) {
+    if (pifQmc5883_Detect(&i2cDevice[dev->bus->busType_u.i2c.device].i2c_port, NULL)) {
         magDev->init = qmc5883lInit;
         magDev->read = qmc5883lRead;
         return true;

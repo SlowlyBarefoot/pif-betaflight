@@ -96,7 +96,7 @@ SPI_TypeDef *spiInstanceByDevice(SPIDevice device)
     return spiDevice[device].dev;
 }
 
-static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_read, uint16_t size)
+static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_read, size_t size)
 {
     // This routine blocks so no need to use static data
     busSegment_t segments[] = {
@@ -131,7 +131,7 @@ static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_r
     spiWait(dev);
 }
 
-static BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+static BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, size_t size)
 {
     // This routine blocks so no need to use static data
     busSegment_t segments[] = {
@@ -147,7 +147,7 @@ static BOOL actSpiRead(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uin
     return TRUE;
 }
 
-static BOOL actSpiWrite(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+static BOOL actSpiWrite(PifSpiDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, size_t size)
 {
     // This routine blocks so no need to use static data
     busSegment_t segments[] = {

@@ -547,7 +547,7 @@ static void i2cUnstick(IO_t scl, IO_t sda)
     IOHi(sda); // Set bus sda high
 }
 
-static PifI2cReturn actI2cWrite(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+static PifI2cReturn actI2cWrite(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, size_t size)
 {
     I2CDevice index = PIF_ID_I2C_2_IDX(p_owner->_p_port->_id);
 
@@ -556,7 +556,7 @@ static PifI2cReturn actI2cWrite(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t i
     return (i2cWriteBuffer(index, p_owner->addr, iaddr, size, p_data) && i2cWait(index)) ? IR_COMPLETE : IR_ERROR;
 }
 
-static PifI2cReturn actI2cRead(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, uint16_t size)
+static PifI2cReturn actI2cRead(PifI2cDevice *p_owner, uint32_t iaddr, uint8_t isize, uint8_t *p_data, size_t size)
 {
     I2CDevice index = PIF_ID_I2C_2_IDX(p_owner->_p_port->_id);
 

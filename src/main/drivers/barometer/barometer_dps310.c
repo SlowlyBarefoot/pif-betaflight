@@ -60,7 +60,7 @@
 static PifDps310 dps310;
 
 #define DETECTION_MAX_RETRY_COUNT   5
-static bool deviceDetect(const extDevice_t *dev, PifI2cPort *p_i2c_port)
+static bool deviceDetect(extDevice_t *dev, PifI2cPort *p_i2c_port)
 {
     (void)dev;
 
@@ -68,10 +68,10 @@ static bool deviceDetect(const extDevice_t *dev, PifI2cPort *p_i2c_port)
         delay(100);
 
         if (dev->bus->busType == BUS_TYPE_I2C) {
-            if (pifDps310I2c_Detect(p_i2c_port, dev->busType_u.i2c.address)) return true;
+            if (pifDps310I2c_Detect(p_i2c_port, dev->busType_u.i2c.address, NULL)) return true;
         }
         else if (dev->bus->busType == BUS_TYPE_SPI) {
-            if (pifDps310Spi_Detect(dev->busType_u.spi.p_spi_port)) return true;
+            if (pifDps310Spi_Detect(dev->busType_u.spi.p_spi_port, dev)) return true;
         }
     };
 
