@@ -110,6 +110,8 @@ typedef struct extDevice_s {
     bool useDMA;
     // Per device buffer reference if needed
     uint8_t *txBuf, *rxBuf;
+
+    struct busSegment_s *segments;
     // Connected devices on the same bus may support different speeds
     uint32_t callbackArg;
 } extDevice_t;

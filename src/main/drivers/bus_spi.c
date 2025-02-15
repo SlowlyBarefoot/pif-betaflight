@@ -105,6 +105,13 @@ static void actSpiTransfer(PifSpiDevice *p_owner, uint8_t *p_write, uint8_t *p_r
     };
     extDevice_t *dev = (extDevice_t *)p_owner->_p_client;
 
+    if (dev->segments) {
+        spiSequence(dev, dev->segments);
+
+        if (!dev->useDMA) spiWait(dev);
+        return;
+    }
+
 	if (p_write) {
 		if (p_read) {
             segments[0].u.buffers.txData = p_write;

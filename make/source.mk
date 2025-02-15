@@ -219,6 +219,8 @@ PIF_SRC = \
             ../../pif/source/rc/pif_rc.c \
             ../../pif/source/rc/pif_rc_ibus.c \
             ../../pif/source/rc/pif_rc_ppm.c \
+            ../../pif/source/sensor/pif_bmi270.c \
+            ../../pif/source/sensor/pif_bmi270_spi.c \
             ../../pif/source/sensor/pif_dps310.c \
             ../../pif/source/sensor/pif_dps310_i2c.c \
             ../../pif/source/sensor/pif_dps310_spi.c \

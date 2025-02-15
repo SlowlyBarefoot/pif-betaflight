@@ -121,11 +121,6 @@ bool baroDPS310Detect(baroDev_t *baro)
         defaultAddressApplied = true;
         p_i2c_port = &i2cDevice[I2C_CFG_TO_DEV(barometerConfig()->baro_i2c_device)].i2c_port;
     }
-#ifdef USE_BARO_SPI_DPS310
-    else if (dev->bus->busType == BUS_TYPE_SPI) {
-        dev->busType_u.spi.p_spi_port = &spiDevice[SPI_CFG_TO_DEV(barometerConfig()->baro_spi_device)].spi_port;
-    }
-#endif
 
     if (!deviceDetect(dev, p_i2c_port)) {
         deviceDeInit(dev);
