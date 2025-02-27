@@ -223,26 +223,47 @@ void uartTryStartTxDMA(uartPort_t *s)
             goto reenable;
         }
 
-        if (s->port.txBufferHead == s->port.txBufferTail) {
-            // No more data to transmit.
-            s->txDMAEmpty = true;
-            return;
-        }
-
-        // Start a new transaction.
-
+        if (s->port.options & SERIAL_PIF) {
+            if (pifRingBuffer_IsEmpty(s->port.uart._p_tx_buffer)) {
+                // No more data to transmit.
+                s->txDMAEmpty = true;
+                return;
+            }
+    
+            // Start a new transaction.
+    
 #ifdef STM32F4
-        xDMA_MemoryTargetConfig(s->txDMAResource, (uint32_t)&s->port.txBuffer[s->port.txBufferTail], DMA_Memory_0);
+            xDMA_MemoryTargetConfig(s->txDMAResource, (uint32_t)pifRingBuffer_GetTailPointer(s->port.uart._p_tx_buffer, 0), DMA_Memory_0);
 #else
-        DMAx_SetMemoryAddress(s->txDMAResource, (uint32_t)&s->port.txBuffer[s->port.txBufferTail]);
+            DMAx_SetMemoryAddress(s->txDMAResource, (uint32_t)pifRingBuffer_GetTailPointer(s->port.uart._p_tx_buffer, 0));
 #endif
-
-        if (s->port.txBufferHead > s->port.txBufferTail) {
-            xDMA_SetCurrDataCounter(s->txDMAResource, s->port.txBufferHead - s->port.txBufferTail);
-            s->port.txBufferTail = s->port.txBufferHead;
-        } else {
-            xDMA_SetCurrDataCounter(s->txDMAResource, s->port.txBufferSize - s->port.txBufferTail);
-            s->port.txBufferTail = 0;
+    
+            uint16_t size = pifRingBuffer_GetLinerSize(s->port.uart._p_tx_buffer, 0);
+            xDMA_SetCurrDataCounter(s->txDMAResource, size);
+            pifRingBuffer_Remove(s->port.uart._p_tx_buffer, size);
+        }
+        else {
+            if (s->port.txBufferHead == s->port.txBufferTail) {
+                // No more data to transmit.
+                s->txDMAEmpty = true;
+                return;
+            }
+    
+            // Start a new transaction.
+    
+#ifdef STM32F4
+            xDMA_MemoryTargetConfig(s->txDMAResource, (uint32_t)&s->port.txBuffer[s->port.txBufferTail], DMA_Memory_0);
+#else
+            DMAx_SetMemoryAddress(s->txDMAResource, (uint32_t)&s->port.txBuffer[s->port.txBufferTail]);
+#endif
+    
+            if (s->port.txBufferHead > s->port.txBufferTail) {
+                xDMA_SetCurrDataCounter(s->txDMAResource, s->port.txBufferHead - s->port.txBufferTail);
+                s->port.txBufferTail = s->port.txBufferHead;
+            } else {
+                xDMA_SetCurrDataCounter(s->txDMAResource, s->port.txBufferSize - s->port.txBufferTail);
+                s->port.txBufferTail = 0;
+            }
         }
         s->txDMAEmpty = false;
 

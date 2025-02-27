@@ -178,10 +178,15 @@ static uint32_t uartTotalRxBytesWaiting(const serialPort_t *instance)
     }
 #endif
 
-    if (uartPort->port.rxBufferHead >= uartPort->port.rxBufferTail) {
-        return uartPort->port.rxBufferHead - uartPort->port.rxBufferTail;
-    } else {
-        return uartPort->port.rxBufferSize + uartPort->port.rxBufferHead - uartPort->port.rxBufferTail;
+    if (instance->options & SERIAL_PIF) {
+        return pifUart_GetFillSizeOfRxBuffer((PifUart *)&instance->uart);
+    }
+    else {
+        if (uartPort->port.rxBufferHead >= uartPort->port.rxBufferTail) {
+            return uartPort->port.rxBufferHead - uartPort->port.rxBufferTail;
+        } else {
+            return uartPort->port.rxBufferSize + uartPort->port.rxBufferHead - uartPort->port.rxBufferTail;
+        }
     }
 }
 
@@ -191,10 +196,15 @@ static uint32_t uartTotalTxBytesFree(const serialPort_t *instance)
 
     uint32_t bytesUsed;
 
-    if (uartPort->port.txBufferHead >= uartPort->port.txBufferTail) {
-        bytesUsed = uartPort->port.txBufferHead - uartPort->port.txBufferTail;
-    } else {
-        bytesUsed = uartPort->port.txBufferSize + uartPort->port.txBufferHead - uartPort->port.txBufferTail;
+    if (instance->options & SERIAL_PIF) {
+        bytesUsed = pifUart_GetFillSizeOfTxBuffer((PifUart *)&instance->uart);
+    }
+    else {
+        if (uartPort->port.txBufferHead >= uartPort->port.txBufferTail) {
+            bytesUsed = uartPort->port.txBufferHead - uartPort->port.txBufferTail;
+        } else {
+            bytesUsed = uartPort->port.txBufferSize + uartPort->port.txBufferHead - uartPort->port.txBufferTail;
+        }
     }
 
 #ifdef USE_DMA
@@ -235,7 +245,12 @@ static bool isUartTransmitBufferEmpty(const serialPort_t *instance)
     } else
 #endif
     {
-        return uartPort->port.txBufferTail == uartPort->port.txBufferHead;
+        if (instance->options & SERIAL_PIF) {
+            return pifRingBuffer_IsEmpty(instance->uart._p_tx_buffer);
+        }
+        else {
+            return uartPort->port.txBufferTail == uartPort->port.txBufferHead;
+        }
     }
 }
 
@@ -252,11 +267,16 @@ static uint8_t uartRead(serialPort_t *instance)
     } else
 #endif
     {
-        ch = uartPort->port.rxBuffer[uartPort->port.rxBufferTail];
-        if (uartPort->port.rxBufferTail + 1 >= uartPort->port.rxBufferSize) {
-            uartPort->port.rxBufferTail = 0;
-        } else {
-            uartPort->port.rxBufferTail++;
+        if (instance->options & SERIAL_PIF) {
+            pifRingBuffer_GetByte(instance->uart._p_rx_buffer, &ch);
+        }
+        else {
+            ch = uartPort->port.rxBuffer[uartPort->port.rxBufferTail];
+            if (uartPort->port.rxBufferTail + 1 >= uartPort->port.rxBufferSize) {
+                uartPort->port.rxBufferTail = 0;
+            } else {
+                uartPort->port.rxBufferTail++;
+            }
         }
     }
 
@@ -267,12 +287,17 @@ static void uartWrite(serialPort_t *instance, uint8_t ch)
 {
     uartPort_t *uartPort = (uartPort_t *)instance;
 
-    uartPort->port.txBuffer[uartPort->port.txBufferHead] = ch;
+    if (instance->options & SERIAL_PIF) {
+        pifRingBuffer_PutByte(instance->uart._p_tx_buffer, ch);
+    }
+    else {
+        uartPort->port.txBuffer[uartPort->port.txBufferHead] = ch;
 
-    if (uartPort->port.txBufferHead + 1 >= uartPort->port.txBufferSize) {
-        uartPort->port.txBufferHead = 0;
-    } else {
-        uartPort->port.txBufferHead++;
+        if (uartPort->port.txBufferHead + 1 >= uartPort->port.txBufferSize) {
+            uartPort->port.txBufferHead = 0;
+        } else {
+            uartPort->port.txBufferHead++;
+        }
     }
 
 #ifdef USE_DMA

@@ -247,9 +247,20 @@ void uartDmaIrqHandler(dmaChannelDescriptor_t* descriptor)
 
 BOOL actUartStartTransfer(PifUart* p_uart)
 {
-    uartDevice_t *uart = uartDevmap[PIF_ID_UART_2_IDX(p_uart->_id)];
+    uartPort_t *uartPort = &uartDevmap[PIF_ID_UART_2_IDX(p_uart->_id)]->port;
 
-    USART_ITConfig(uart->port.USARTx, USART_IT_TXE, ENABLE);
+#ifdef USE_DMA
+    if (uartPort->txDMAResource) {
+        uartTryStartTxDMA(uartPort);
+    } else
+#endif
+    {
+#ifdef USE_HAL_DRIVER
+        __HAL_UART_ENABLE_IT(&uartPort->Handle, UART_IT_TXE);
+#else
+        USART_ITConfig(uartPort->USARTx, USART_IT_TXE, ENABLE);
+#endif
+    }    
     return TRUE;
 }
 
@@ -280,12 +291,11 @@ uartPort_t *serialUART(UARTDevice_e device, uint32_t baudRate, portMode_e mode, 
         }
         if (!pifUart_AttachTask(&s->port.uart, TM_PERIOD_MS, 2, "Uart")) return NULL;
     }
-    else {
-        s->port.rxBuffer = hardware->rxBuffer;
-        s->port.txBuffer = hardware->txBuffer;
-        s->port.rxBufferSize = hardware->rxBufferSize;
-        s->port.txBufferSize = hardware->txBufferSize;
-    }
+
+    s->port.rxBuffer = hardware->rxBuffer;
+    s->port.txBuffer = hardware->txBuffer;
+    s->port.rxBufferSize = hardware->rxBufferSize;
+    s->port.txBufferSize = hardware->txBufferSize;
 
     s->USARTx = hardware->reg;
 
@@ -332,34 +342,33 @@ uartPort_t *serialUART(UARTDevice_e device, uint32_t baudRate, portMode_e mode, 
 
 void uartIrqHandler(uartPort_t *s)
 {
-    uint8_t state, data;
+    uint8_t data;
 
-    if (s->port.uart._id) {
-        if (!s->rxDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_RXNE) == SET)) {
-            pifUart_PutRxByte(&s->port.uart, s->USARTx->DR);
+    if (!s->rxDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_RXNE) == SET)) {
+        if (s->port.rxCallback) {
+            s->port.rxCallback(s->USARTx->DR, s->port.rxCallbackData);
+        } else {
+            if (s->port.options & SERIAL_PIF) {
+                pifUart_PutRxByte(&s->port.uart, s->USARTx->DR);
+            }
+            else {
+                s->port.rxBuffer[s->port.rxBufferHead] = s->USARTx->DR;
+                s->port.rxBufferHead = (s->port.rxBufferHead + 1) % s->port.rxBufferSize;
+            }
         }
+    }
 
-        if (!s->txDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_TXE) == SET)) {
-            state = pifUart_GetTxByte(&s->port.uart, &data);
-            if (!(state & PIF_UART_SEND_DATA_STATE_EMPTY)) {
+    if (!s->txDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_TXE) == SET)) {
+        if (s->port.options & SERIAL_PIF) {
+            if (!pifRingBuffer_IsEmpty(s->port.uart._p_tx_buffer)) {
+                pifUart_GetTxByte(&s->port.uart, &data);
                 USART_SendData(s->USARTx, data);
             }
             else {
                 USART_ITConfig(s->USARTx, USART_IT_TXE, DISABLE);
             }
         }
-    }
-    else {
-        if (!s->rxDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_RXNE) == SET)) {
-            if (s->port.rxCallback) {
-                s->port.rxCallback(s->USARTx->DR, s->port.rxCallbackData);
-            } else {
-                s->port.rxBuffer[s->port.rxBufferHead] = s->USARTx->DR;
-                s->port.rxBufferHead = (s->port.rxBufferHead + 1) % s->port.rxBufferSize;
-            }
-        }
-
-        if (!s->txDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_TXE) == SET)) {
+        else {
             if (s->port.txBufferTail != s->port.txBufferHead) {
                 USART_SendData(s->USARTx, s->port.txBuffer[s->port.txBufferTail]);
                 s->port.txBufferTail = (s->port.txBufferTail + 1) % s->port.txBufferSize;
