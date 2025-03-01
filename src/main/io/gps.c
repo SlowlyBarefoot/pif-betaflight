@@ -358,6 +358,7 @@ void gpsInit(void)
 #endif
 
     // no callback - buffer will be consumed in gpsUpdate()
+    setSerialPifName(gpsPortConfig->identifier, "UART-GPS");
     gpsPort = openSerialPort(gpsPortConfig->identifier, FUNCTION_GPS, NULL, NULL, baudRates[gpsInitData[gpsData.baudrateIndex].baudrateIndex], mode, SERIAL_PIF);
     if (!gpsPort) {
         return;

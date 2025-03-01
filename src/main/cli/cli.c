@@ -4770,7 +4770,7 @@ static void cliStatus(const char *cmdName, char *cmdline)
     cliPrintLinefeed();
 #endif
 
-    cliPrintLinef("Task Count: %d / %d, Timer Count: %d / %d", pifTaskManager_Count(), TASK_SIZE, pifTimerManager_Count(&g_timer_1ms), TIMER_1MS_SIZE);
+    cliPrintLinef("PIF Timer Count: %d / %d", pifTimerManager_Count(&g_timer_1ms), TIMER_1MS_SIZE);
 
     // Stack and config sizes and usages
 
@@ -5001,7 +5001,7 @@ static void cliTasks(const char *cmdName, char *cmdline)
     }
 
     cliPrintLinefeed();
-   	cliPrintLinef("Task count: %d\n", pifTaskManager_Count());
+   	cliPrintLinef("Task count: %d / %d\n", pifTaskManager_Count(), TASK_SIZE);
     pifTaskManager_AllTask(pifTaskCallback);
 }
 

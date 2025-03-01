@@ -126,6 +126,7 @@ bool ibusInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
 #endif
 
 
+    setSerialPifName(portConfig->identifier, "UART-RX_IBUS");
     serialPort_t *ibusPort = openSerialPort(portConfig->identifier,
         FUNCTION_RX_SERIAL,
         NULL,

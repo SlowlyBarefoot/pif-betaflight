@@ -597,3 +597,10 @@ void serialPassthrough(serialPort_t *left, serialPort_t *right, serialConsumer *
      }
  }
  #endif
+
+void setSerialPifName(serialPortIdentifier_e identifier, const char *p_name)
+{
+    if (identifier >= SERIAL_PORT_USART1 && identifier <= SERIAL_PORT_USART10) {
+        setSerialUartPifName(SERIAL_PORT_IDENTIFIER_TO_UARTDEV(identifier), p_name);
+    }
+}

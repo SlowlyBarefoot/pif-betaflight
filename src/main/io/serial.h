@@ -180,3 +180,5 @@ baudRate_e lookupBaudRateIndex(uint32_t baudRate);
 // msp/cli/bootloader
 //
 void serialPassthrough(serialPort_t *left, serialPort_t *right, serialConsumer *leftC, serialConsumer *rightC);
+
+void setSerialPifName(serialPortIdentifier_e identifier, const char *p_name);
