@@ -126,7 +126,6 @@ bool ibusInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
 #endif
 
 
-    setSerialPifName(portConfig->identifier, "UART-RX_IBUS");
     serialPort_t *ibusPort = openSerialPort(portConfig->identifier,
         FUNCTION_RX_SERIAL,
         NULL,
@@ -135,6 +134,7 @@ bool ibusInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
         portShared ? MODE_RXTX : MODE_RX,
         (rxConfig->serialrx_inverted ? SERIAL_INVERTED : 0) | (rxConfig->halfDuplex || portShared ? SERIAL_BIDIR : 0) | SERIAL_PIF
         );
+    pifUart_AttachTask(&ibusPort->uart, TM_PERIOD_MS, 2, "UART-RX_IBUS");
 
 #if defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
     if (portShared) {

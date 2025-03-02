@@ -97,7 +97,6 @@ bool configureIbusTelemetryPort(void)
         return false;
     }
 
-    setSerialPifName(ibusSerialPortConfig->identifier, "UART-TM_IBUS");
     ibusSerialPort = openSerialPort(ibusSerialPortConfig->identifier, FUNCTION_TELEMETRY_IBUS, NULL, NULL, IBUS_BAUDRATE, IBUS_UART_MODE, SERIAL_BIDIR | (telemetryConfig()->telemetry_inverted ? SERIAL_INVERTED : SERIAL_NOT_INVERTED) | SERIAL_PIF);
 
     if (!ibusSerialPort) {

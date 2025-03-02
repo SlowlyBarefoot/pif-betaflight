@@ -264,7 +264,7 @@ static uint16_t taskUpdateBaro(PifTask *p_task)
     if (sensors(SENSOR_BARO)) {
         const uint32_t newDeadline = baroUpdate(pif_timer1us);
         if (newDeadline != 0) {
-            return p_task->_mode == TM_CHANGE_US ? newDeadline : newDeadline / 1000;
+            return p_task->_mode == TM_PERIOD_US ? newDeadline : newDeadline / 1000;
         }
     }
     return 0;
@@ -279,7 +279,7 @@ static uint16_t taskUpdateMag(PifTask *p_task)
     if (sensors(SENSOR_MAG)) {
         const uint32_t newDeadline = compassUpdate(pif_timer1us);
         if (newDeadline != 0) {
-            return p_task->_mode == TM_CHANGE_US ? newDeadline : newDeadline / 1000;
+            return p_task->_mode == TM_PERIOD_US ? newDeadline : newDeadline / 1000;
         }
     }
     return 0;
@@ -383,11 +383,11 @@ task_attribute_t task_attributes[TASK_COUNT] = {
 #endif
 
 #ifdef USE_MAG
-    [TASK_COMPASS] = DEFINE_TASK("COMPASS", NULL, TM_CHANGE, taskUpdateMag, TASK_PERIOD_HZ(10)),
+    [TASK_COMPASS] = DEFINE_TASK("COMPASS", NULL, TM_PERIOD, taskUpdateMag, TASK_PERIOD_HZ(10)),
 #endif
 
 #ifdef USE_BARO
-    [TASK_BARO] = DEFINE_TASK("BARO", NULL, TM_CHANGE, taskUpdateBaro, TASK_PERIOD_HZ(20)),
+    [TASK_BARO] = DEFINE_TASK("BARO", NULL, TM_PERIOD, taskUpdateBaro, TASK_PERIOD_HZ(20)),
 #endif
 
 #if defined(USE_BARO) || defined(USE_GPS)

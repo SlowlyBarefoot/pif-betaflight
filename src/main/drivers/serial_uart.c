@@ -314,11 +314,6 @@ static void uartWrite(serialPort_t *instance, uint8_t ch)
     }
 }
 
-void setSerialUartPifName(UARTDevice_e device, const char *p_name)
-{
-    uartDevmap[device]->p_name = p_name;
-}
-
 const struct serialPortVTable uartVTable[] = {
     {
         .serialWrite = uartWrite,

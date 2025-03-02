@@ -4926,8 +4926,6 @@ void pifTaskCallback(PifTask *p_owner)
         case TM_ALWAYS: mode = "Always"; break;
         case TM_PERIOD_MS: mode = "PeriodMs"; break;
         case TM_PERIOD_US: mode = "PeriodUs"; break;
-        case TM_CHANGE_MS: mode = "ChangeMs"; break;
-        case TM_CHANGE_US: mode = "ChangeUs"; break;
         case TM_EXTERNAL_CUTIN: mode = "ExtCutin"; break;
         case TM_EXTERNAL_ORDER: mode = "ExtOrder"; break;
         case TM_TIMER: mode = "Timer"; break;

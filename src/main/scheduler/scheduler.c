@@ -127,17 +127,6 @@ void rescheduleTask(taskId_e taskId, timeDelta_t newPeriodUs)
         }
         break;
 
-    case TM_CHANGE:
-        if (task->attribute->desiredPeriodUs >= 5000) {
-            period = task->attribute->desiredPeriodUs / 1000;
-            mode = TM_CHANGE_MS;
-        }
-        else {
-            period = task->attribute->desiredPeriodUs;
-            mode = TM_CHANGE_US;
-        }
-        break;
-
     default:
         break;
     }
@@ -172,18 +161,6 @@ void setTaskEnabled(taskId_e taskId, bool enabled)
                 else {
                     period = task->attribute->desiredPeriodUs;
                     mode = TM_PERIOD_US;
-                }
-                task->p_task = pifTaskManager_Add(mode, period, task->attribute->pifTaskFunc, task, true);
-                break;
-
-            case TM_CHANGE:
-                if (task->attribute->desiredPeriodUs >= 5000) {
-                    period = task->attribute->desiredPeriodUs / 1000;
-                    mode = TM_CHANGE_MS;
-                }
-                else {
-                    period = task->attribute->desiredPeriodUs;
-                    mode = TM_CHANGE_US;
                 }
                 task->p_task = pifTaskManager_Add(mode, period, task->attribute->pifTaskFunc, task, true);
                 break;

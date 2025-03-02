@@ -289,7 +289,6 @@ uartPort_t *serialUART(UARTDevice_e device, uint32_t baudRate, portMode_e mode, 
             if (!pifUart_AssignTxBuffer(&s->port.uart, hardware->txBufferSize, (uint8_t *)hardware->txBuffer)) return NULL;
             s->port.uart.act_start_transfer = actUartStartTransfer;
         }
-        if (!pifUart_AttachTask(&s->port.uart, TM_PERIOD_MS, 2, uart->p_name)) return NULL;
     }
 
     s->port.rxBuffer = hardware->rxBuffer;
