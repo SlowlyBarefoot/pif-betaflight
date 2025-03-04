@@ -643,7 +643,7 @@ void dashboardSetPage(pageId_e pageId)
     pageState.pageFlags |= PAGE_STATE_FLAG_FORCE_PAGE_CHANGE;
 }
 
-uint16_t dashboardUpdate(PifTask *p_task)
+uint32_t dashboardUpdate(PifTask *p_task)
 {
     static uint8_t previousArmedState = 0;
 

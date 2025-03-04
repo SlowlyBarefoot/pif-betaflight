@@ -1499,7 +1499,7 @@ static void cmsUpdate(uint32_t currentTimeUs)
     lastCalledMs = millis();
 }
 
-uint16_t cmsHandler(PifTask *p_task)
+uint32_t cmsHandler(PifTask *p_task)
 {
     UNUSED(p_task);
 

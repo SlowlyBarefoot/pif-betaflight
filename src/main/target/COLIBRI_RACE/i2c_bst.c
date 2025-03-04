@@ -717,7 +717,7 @@ static uint32_t next20hzUpdateAt_1 = 0;
 
 static uint8_t sendCounter = 0;
 
-uint16_t taskBstMasterProcess(PifTask *p_task)
+uint32_t taskBstMasterProcess(PifTask *p_task)
 {
     UNUSED(p_task);
 

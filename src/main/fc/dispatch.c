@@ -45,7 +45,7 @@ void dispatchEnable(void)
     dispatchEnabled = true;
 }
 
-uint16_t dispatchProcess(PifTask *p_task)
+uint32_t dispatchProcess(PifTask *p_task)
 {
     UNUSED(p_task);
 

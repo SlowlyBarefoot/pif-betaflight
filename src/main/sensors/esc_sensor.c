@@ -300,7 +300,7 @@ static void selectNextMotor(void)
 
 // XXX Review ESC sensor under refactored motor handling
 
-uint16_t escSensorProcess(PifTask *p_task)
+uint32_t escSensorProcess(PifTask *p_task)
 {
     const timeMs_t currentTimeMs = pif_timer1us / 1000;
 

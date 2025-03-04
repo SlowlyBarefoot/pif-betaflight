@@ -217,7 +217,7 @@ void schedulerResetTaskMaxExecutionTime(taskId_e taskId);
 void schedulerSetNextStateTime(timeDelta_t nextStateTime);
 timeDelta_t schedulerGetNextStateTime();
 void schedulerInit(void);
-uint16_t taskSystem(PifTask *p_task);
+uint32_t taskSystem(PifTask *p_task);
 void schedulerEnableGyro(void);
 uint16_t getAverageSystemLoadPercent(void);
 float schedulerGetCycleTimeMultiplier(void);

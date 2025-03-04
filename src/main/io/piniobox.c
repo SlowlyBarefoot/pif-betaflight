@@ -55,7 +55,7 @@ void pinioBoxInit(const pinioBoxConfig_t *pinioBoxConfig)
     }
 }
 
-uint16_t pinioBoxUpdate(PifTask *p_task)
+uint32_t pinioBoxUpdate(PifTask *p_task)
 {
     UNUSED(p_task);
 

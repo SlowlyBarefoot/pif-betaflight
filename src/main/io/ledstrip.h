@@ -225,7 +225,7 @@ void reevaluateLedConfig(void);
 void ledStripInit(void);
 void ledStripEnable(void);
 void ledStripDisable(void);
-uint16_t ledStripUpdate(PifTask *p_task);
+uint32_t ledStripUpdate(PifTask *p_task);
 
 bool setModeColor(ledModeIndex_e modeIndex, int modeColorIndex, int colorIndex);
 

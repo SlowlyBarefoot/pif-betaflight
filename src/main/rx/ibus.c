@@ -134,7 +134,7 @@ bool ibusInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
         portShared ? MODE_RXTX : MODE_RX,
         (rxConfig->serialrx_inverted ? SERIAL_INVERTED : 0) | (rxConfig->halfDuplex || portShared ? SERIAL_BIDIR : 0) | SERIAL_PIF
         );
-    pifUart_AttachTask(&ibusPort->uart, TM_PERIOD_MS, 2, "UART-RX_IBUS");
+    pifUart_AttachTask(&ibusPort->uart, TM_PERIOD, 2000, "UART-RX_IBUS");
 
 #if defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
     if (portShared) {

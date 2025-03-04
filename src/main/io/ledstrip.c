@@ -1247,7 +1247,7 @@ static void applySimpleProfile(timeUs_t currentTimeUs)
     }
 }
 
-uint16_t ledStripUpdate(PifTask *p_task)
+uint32_t ledStripUpdate(PifTask *p_task)
 {
     UNUSED(p_task);
 

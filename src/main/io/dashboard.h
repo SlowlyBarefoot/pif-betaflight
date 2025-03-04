@@ -58,7 +58,7 @@ typedef enum {
 } pageId_e;
 
 void dashboardInit(void);
-uint16_t dashboardUpdate(PifTask *p_task);
+uint32_t dashboardUpdate(PifTask *p_task);
 
 void dashboardShowFixedPage(pageId_e pageId);
 

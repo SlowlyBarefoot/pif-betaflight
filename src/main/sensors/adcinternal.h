@@ -23,6 +23,6 @@
 #include "drivers/time.h"
 
 void adcInternalInit(void);
-uint16_t adcInternalProcess(PifTask *p_task);
+uint32_t adcInternalProcess(PifTask *p_task);
 int16_t getCoreTemperatureCelsius(void);
 uint16_t getVrefMv(void);

@@ -129,7 +129,7 @@ PG_RESET_TEMPLATE(batteryConfig_t, batteryConfig,
     .vbatDurationForCritical = 0,
 );
 
-uint16_t batteryUpdateVoltage(PifTask *p_task)
+uint32_t batteryUpdateVoltage(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -414,7 +414,7 @@ void batteryInit(void)
     }
 }
 
-uint16_t batteryUpdateCurrentMeter(PifTask *p_task)
+uint32_t batteryUpdateCurrentMeter(PifTask *p_task)
 {
     UNUSED(p_task);
 

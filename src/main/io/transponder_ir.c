@@ -70,7 +70,7 @@ const transponderRequirement_t transponderRequirements[TRANSPONDER_PROVIDER_COUN
     {TRANSPONDER_ERLT, TRANSPONDER_DATA_LENGTH_ERLT, TRANSPONDER_TRANSMIT_DELAY_ERLT, TRANSPONDER_TRANSMIT_JITTER_ERLT}
 };
 
-uint16_t transponderUpdate(PifTask *p_task)
+uint32_t transponderUpdate(PifTask *p_task)
 {
     static uint32_t jitterIndex = 0;
 

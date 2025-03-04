@@ -1237,7 +1237,7 @@ static FAST_CODE_NOINLINE void subTaskRcCommand(timeUs_t currentTimeUs)
     processRcCommand();
 }
 
-FAST_CODE uint16_t taskGyroSample(PifTask *p_task)
+FAST_CODE uint32_t taskGyroSample(PifTask *p_task)
 {
     static timeMs_t lastFailsafeCheckMs = 0;
 
@@ -1337,7 +1337,7 @@ FAST_CODE bool pidLoopReady(void)
     return false;
 }
 
-FAST_CODE uint16_t taskFiltering(PifTask *p_task)
+FAST_CODE uint32_t taskFiltering(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -1346,7 +1346,7 @@ FAST_CODE uint16_t taskFiltering(PifTask *p_task)
 }
 
 // Function for loop trigger
-FAST_CODE uint16_t taskMainPidLoop(PifTask *p_task)
+FAST_CODE uint32_t taskMainPidLoop(PifTask *p_task)
 {
     UNUSED(p_task);
 

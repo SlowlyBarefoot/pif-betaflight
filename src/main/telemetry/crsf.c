@@ -452,7 +452,7 @@ void crsfScheduleSpeedNegotiationResponse(void)
     crsfSpeed.isNewSpeedValid = false;
 }
 
-uint16_t speedNegotiationProcess(PifTask *p_task)
+uint32_t speedNegotiationProcess(PifTask *p_task)
 {
     UNUSED(p_task);
 

@@ -362,7 +362,7 @@ void gpsInit(void)
     if (!gpsPort) {
         return;
     }
-    if (!pifUart_AttachTask(&gpsPort->uart, TM_PERIOD_MS, 2, "UART-GPS")) return;
+    if (!pifUart_AttachTask(&gpsPort->uart, TM_PERIOD, 2000, "UART-GPS")) return;
 
     // signal GPS "thread" to initialize when it gets to it
     gpsSetState(GPS_STATE_INITIALIZING);
@@ -764,7 +764,7 @@ static void updateGpsIndicator(timeUs_t currentTimeUs)
     }
 }
 
-uint16_t gpsUpdate(PifTask *p_task)
+uint32_t gpsUpdate(PifTask *p_task)
 {
     static gpsState_e gpsStateDurationUs[GPS_STATE_COUNT];
     timeUs_t executeTimeUs;

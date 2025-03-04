@@ -22,7 +22,7 @@
 
 void bstProcessInCommand(void);
 void bstSlaveProcessInCommand(void);
-uint16_t taskBstMasterProcess(PifTask *p_task);
+uint32_t taskBstMasterProcess(PifTask *p_task);
 
 bool writeGpsPositionPrameToBST(void);
 bool writeRollPitchYawToBST(void);

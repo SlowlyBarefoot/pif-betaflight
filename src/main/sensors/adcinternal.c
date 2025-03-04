@@ -73,7 +73,7 @@ int16_t getCoreTemperatureCelsius(void)
     return coreTemperature;
 }
 
-uint16_t adcInternalProcess(PifTask *p_task)
+uint32_t adcInternalProcess(PifTask *p_task)
 {
     UNUSED(p_task);
 

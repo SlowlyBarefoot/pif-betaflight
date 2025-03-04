@@ -100,8 +100,6 @@ void getTaskInfo(taskId_e taskId, taskInfo_t * taskInfo)
 void rescheduleTask(taskId_e taskId, timeDelta_t newPeriodUs)
 {
     task_t *task;
-    PifTaskMode mode = TM_NONE;
-    uint16_t period;
 
     if (taskId < TASK_COUNT) {
         task = getTask(taskId);
@@ -115,36 +113,18 @@ void rescheduleTask(taskId_e taskId, timeDelta_t newPeriodUs)
         desiredPeriodCycles = (int32_t)clockMicrosToCycles((uint32_t)getTask(TASK_GYRO)->attribute->desiredPeriodUs);
     }
 
-    switch (task->attribute->pifTaskMode) {
-    case TM_PERIOD:
-        if (task->attribute->desiredPeriodUs >= 5000) {
-            period = task->attribute->desiredPeriodUs / 1000;
-            mode = TM_PERIOD_MS;
+    if (task->attribute->pifTaskMode) {
+        if (task->attribute->pifTaskMode == task->p_task->_mode) {
+            pifTask_ChangePeriod(task->p_task, task->attribute->desiredPeriodUs);
         }
         else {
-            period = task->attribute->desiredPeriodUs;
-            mode = TM_PERIOD_US;
-        }
-        break;
-
-    default:
-        break;
-    }
-    if (mode) {
-        if (mode == task->p_task->_mode) {
-            pifTask_ChangePeriod(task->p_task, period);
-        }
-        else {
-            pifTask_ChangeMode(task->p_task, mode, period);
+            pifTask_ChangeMode(task->p_task, task->attribute->pifTaskMode, task->attribute->desiredPeriodUs);
         }
     }
 }
 
 void setTaskEnabled(taskId_e taskId, bool enabled)
 {
-    PifTaskMode mode;
-    uint16_t period;
-
     if (taskId < TASK_COUNT) {
         task_t *task = getTask(taskId);
         if (enabled) {
@@ -154,15 +134,7 @@ void setTaskEnabled(taskId_e taskId, bool enabled)
                 break;
 
             case TM_PERIOD:
-                if (task->attribute->desiredPeriodUs >= 5000) {
-                    period = task->attribute->desiredPeriodUs / 1000;
-                    mode = TM_PERIOD_MS;
-                }
-                else {
-                    period = task->attribute->desiredPeriodUs;
-                    mode = TM_PERIOD_US;
-                }
-                task->p_task = pifTaskManager_Add(mode, period, task->attribute->pifTaskFunc, task, true);
+                task->p_task = pifTaskManager_Add(task->attribute->pifTaskMode, task->attribute->desiredPeriodUs, task->attribute->pifTaskFunc, task, true);
                 break;
 
             default:
@@ -270,7 +242,7 @@ FAST_CODE timeDelta_t schedulerGetNextStateTime()
 }
 
 
-uint16_t taskSystem(PifTask *p_task)
+uint32_t taskSystem(PifTask *p_task)
 {
     uint32_t nowCycles;
     uint32_t nextTargetCycles = 0;

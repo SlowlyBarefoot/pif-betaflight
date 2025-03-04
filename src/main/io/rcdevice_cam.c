@@ -293,7 +293,7 @@ static void rcdeviceProcessDeviceRequest(runcamDeviceRequest_t *request)
     }
 }
 
-uint16_t rcdeviceUpdate(PifTask *p_task)
+uint32_t rcdeviceUpdate(PifTask *p_task)
 {
     UNUSED(p_task);
 

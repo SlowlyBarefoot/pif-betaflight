@@ -4924,13 +4924,11 @@ void pifTaskCallback(PifTask *p_owner)
     switch (p_owner->_mode) {
         case TM_RATIO: mode = "Ratio"; break;
         case TM_ALWAYS: mode = "Always"; break;
-        case TM_PERIOD_MS: mode = "PeriodMs"; break;
-        case TM_PERIOD_US: mode = "PeriodUs"; break;
+        case TM_PERIOD: mode = "Period"; break;
         case TM_EXTERNAL_CUTIN: mode = "ExtCutin"; break;
         case TM_EXTERNAL_ORDER: mode = "ExtOrder"; break;
         case TM_TIMER: mode = "Timer"; break;
-        case TM_IDLE_MS: mode = "IdleMs"; break;
-        case TM_IDLE_US: mode = "IdleUs"; break;
+        case TM_IDLE: mode = "Idle"; break;
         default: mode = "---"; break;
     }
     cliPrintf(" (%u): %s-%u\n", p_owner->_id, mode, p_owner->_default_period);

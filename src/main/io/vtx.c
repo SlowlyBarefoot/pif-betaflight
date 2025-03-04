@@ -237,7 +237,7 @@ static bool vtxProcessStateUpdate(vtxDevice_t *vtxDevice)
     return (bool)memcmp(&vtxSettingsState, &vtxState, sizeof(vtxSettingsConfig_t));
 }
 
-uint16_t vtxUpdate(PifTask *p_task)
+uint32_t vtxUpdate(PifTask *p_task)
 {
     static uint8_t currentSchedule = 0;
 

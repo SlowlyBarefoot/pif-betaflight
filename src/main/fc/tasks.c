@@ -119,7 +119,7 @@
 // Add a margin to the task duration estimation
 #define RX_TASK_MARGIN 1
 
-static uint16_t taskMain(PifTask *p_task)
+static uint32_t taskMain(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -129,7 +129,7 @@ static uint16_t taskMain(PifTask *p_task)
     return 0;
 }
 
-static uint16_t taskHandleSerial(PifTask *p_task)
+static uint32_t taskHandleSerial(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -150,7 +150,7 @@ static uint16_t taskHandleSerial(PifTask *p_task)
     return 0;
 }
 
-static uint16_t taskBatteryAlerts(PifTask *p_task)
+static uint32_t taskBatteryAlerts(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -164,7 +164,7 @@ static uint16_t taskBatteryAlerts(PifTask *p_task)
 }
 
 #ifdef USE_ACC
-static uint16_t taskUpdateAccelerometer(PifTask *p_task)
+static uint32_t taskUpdateAccelerometer(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -187,7 +187,7 @@ bool taskUpdateRxMainInProgress()
     return (rxState != RX_STATE_CHECK);
 }
 
-static uint16_t taskUpdateRxMain(PifTask *p_task)
+static uint32_t taskUpdateRxMain(PifTask *p_task)
 {
     static timeDelta_t rxStateDurationFractionUs[RX_STATE_COUNT];
     timeDelta_t executeTimeUs;
@@ -257,14 +257,14 @@ static uint16_t taskUpdateRxMain(PifTask *p_task)
 
 
 #ifdef USE_BARO
-static uint16_t taskUpdateBaro(PifTask *p_task)
+static uint32_t taskUpdateBaro(PifTask *p_task)
 {
     UNUSED(p_task);
 
     if (sensors(SENSOR_BARO)) {
         const uint32_t newDeadline = baroUpdate(pif_timer1us);
         if (newDeadline != 0) {
-            return p_task->_mode == TM_PERIOD_US ? newDeadline : newDeadline / 1000;
+            return newDeadline;
         }
     }
     return 0;
@@ -272,14 +272,14 @@ static uint16_t taskUpdateBaro(PifTask *p_task)
 #endif
 
 #ifdef USE_MAG
-static uint16_t taskUpdateMag(PifTask *p_task)
+static uint32_t taskUpdateMag(PifTask *p_task)
 {
     UNUSED(p_task);
 
     if (sensors(SENSOR_MAG)) {
         const uint32_t newDeadline = compassUpdate(pif_timer1us);
         if (newDeadline != 0) {
-            return p_task->_mode == TM_PERIOD_US ? newDeadline : newDeadline / 1000;
+            return newDeadline;
         }
     }
     return 0;
@@ -287,7 +287,7 @@ static uint16_t taskUpdateMag(PifTask *p_task)
 #endif
 
 #if defined(USE_RANGEFINDER)
-static uint16_t taskUpdateRangefinder(PifTask *p_task)
+static uint32_t taskUpdateRangefinder(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -303,7 +303,7 @@ static uint16_t taskUpdateRangefinder(PifTask *p_task)
 #endif
 
 #if defined(USE_BARO) || defined(USE_GPS)
-static uint16_t taskCalculateAltitude(PifTask *p_task)
+static uint32_t taskCalculateAltitude(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -313,7 +313,7 @@ static uint16_t taskCalculateAltitude(PifTask *p_task)
 #endif // USE_BARO || USE_GPS
 
 #ifdef USE_TELEMETRY
-static uint16_t taskTelemetry(PifTask *p_task)
+static uint32_t taskTelemetry(PifTask *p_task)
 {
     UNUSED(p_task);
 
@@ -327,7 +327,7 @@ static uint16_t taskTelemetry(PifTask *p_task)
 #endif
 
 #ifdef USE_CAMERA_CONTROL
-static uint16_t taskCameraControl(PifTask *p_task)
+static uint32_t taskCameraControl(PifTask *p_task)
 {
     UNUSED(p_task);
 

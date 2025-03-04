@@ -568,7 +568,7 @@ static int calculateThrottleAngleCorrection(void)
     return lrintf(throttleAngleValue * sin_approx(angle / (900.0f * M_PIf / 2.0f)));
 }
 
-uint16_t imuUpdateAttitude(PifTask *p_task)
+uint32_t imuUpdateAttitude(PifTask *p_task)
 {
     UNUSED(p_task);
 

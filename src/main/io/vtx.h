@@ -45,4 +45,4 @@ typedef struct vtxSettingsConfig_s {
 PG_DECLARE(vtxSettingsConfig_t, vtxSettingsConfig);
 
 void vtxInit(void);
-uint16_t vtxUpdate(PifTask *p_task);
+uint32_t vtxUpdate(PifTask *p_task);

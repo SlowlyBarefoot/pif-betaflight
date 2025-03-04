@@ -62,7 +62,7 @@ extern char _Min_Stack_Size; // declared in .LD file
 
 static uint32_t usedStackSize;
 
-uint16_t taskStackCheck(PifTask *p_task)
+uint32_t taskStackCheck(PifTask *p_task)
 {
     UNUSED(p_task);
 

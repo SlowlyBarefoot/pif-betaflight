@@ -32,5 +32,5 @@ typedef struct dispatchEntry_s {
 
 bool dispatchIsEnabled(void);
 void dispatchEnable(void);
-uint16_t dispatchProcess(PifTask *p_task);
+uint32_t dispatchProcess(PifTask *p_task);
 void dispatchAdd(dispatchEntry_t *entry, int delayUs);

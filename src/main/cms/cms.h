@@ -46,7 +46,7 @@ extern displayPort_t *pCurrentDisplay;
 
 // For main.c and scheduler
 void cmsInit(void);
-uint16_t cmsHandler(PifTask *p_task);
+uint32_t cmsHandler(PifTask *p_task);
 
 bool cmsDisplayPortSelect(displayPort_t *instance);
 void cmsMenuOpen(void);
