@@ -65,7 +65,8 @@ void mspSerialAllocatePorts(void)
 
         serialPort_t *serialPort = openSerialPort(portConfig->identifier, FUNCTION_MSP, NULL, NULL, baudRates[portConfig->msp_baudrateIndex], MODE_RXTX, SERIAL_PIF);
         if (serialPort) {
-            pifUart_AttachTask(&serialPort->uart, TM_PERIOD, 2000, "UART-MSP");
+            pifUart_AttachTxTask(&serialPort->uart, TM_EXTERNAL_ORDER, 0, "UART-TX-MSP");
+            pifUart_AttachRxTask(&serialPort->uart, TM_PERIOD, 2000, "UART-RX-MSP");        // 2000ms
 
             bool sharedWithTelemetry = isSerialPortShared(portConfig, FUNCTION_MSP, TELEMETRY_PORT_FUNCTIONS_MASK);
             resetMspPort(mspPort, serialPort, sharedWithTelemetry);

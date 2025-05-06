@@ -5,7 +5,7 @@
 #include "sensor/pif_imu_sensor.h"
 
 
-#define TASK_SIZE				35
+#define TASK_SIZE				40
 #define TIMER_1MS_SIZE			3
 
 #define DISALLOW_YIELD_ID_I2C   1

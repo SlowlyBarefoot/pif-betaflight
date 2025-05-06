@@ -4922,7 +4922,6 @@ void pifTaskCallback(PifTask *p_owner)
         cliPrintf("  ---");
     }
     switch (p_owner->_mode) {
-        case TM_RATIO: mode = "Ratio"; break;
         case TM_ALWAYS: mode = "Always"; break;
         case TM_PERIOD: mode = "Period"; break;
         case TM_EXTERNAL_CUTIN: mode = "ExtCutin"; break;

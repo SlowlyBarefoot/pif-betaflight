@@ -91,7 +91,7 @@ void getTaskInfo(taskId_e taskId, taskInfo_t * taskInfo)
     taskInfo->taskName = task->attribute->taskName;
     taskInfo->subTaskName = task->attribute->subTaskName;
     taskInfo->maxExecutionTimeUs = p_task->_max_execution_time;
-    taskInfo->totalExecutionTimeUs = p_task->_total_execution_time * p_task->_unit;
+    taskInfo->totalExecutionTimeUs = p_task->_total_execution_time;
     taskInfo->averageExecutionTimeUs = pifTask_GetAverageExecuteTime(p_task);
     taskInfo->averageDeltaTimeUs = pifTask_GetAverageDeltaTime(p_task);
     taskInfo->latestDeltaTimeUs = p_task->_delta_time;
@@ -284,18 +284,18 @@ uint32_t taskSystem(PifTask *p_task)
             }
             DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 0, clockCyclesTo10thMicros(cmpTimeCycles(nowCycles, lastTargetCycles)));
 #endif
-            pifTask_SetTrigger(getTask(TASK_GYRO)->p_task);
+            pifTask_SetTrigger(getTask(TASK_GYRO)->p_task, 0);
 
             lastTargetCycles = nextTargetCycles;
        }
     }
 
     if (rxUpdateCheck(pif_timer1us, cmpTimeUs(pif_timer1us, p_task->_last_execute_time))) {
-        pifTask_SetTrigger(getTask(TASK_RX)->p_task);
+        pifTask_SetTrigger(getTask(TASK_RX)->p_task, 0);
     }
 #ifdef USE_OSD
    if (osdUpdateCheck(pif_timer1us, cmpTimeUs(pif_timer1us, p_task->_last_execute_time))) {
-        pifTask_SetTrigger(getTask(TASK_OSD)->p_task);
+        pifTask_SetTrigger(getTask(TASK_OSD)->p_task, 0);
     }
 #endif    
     return 0;

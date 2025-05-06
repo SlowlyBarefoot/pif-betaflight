@@ -1250,10 +1250,10 @@ FAST_CODE uint32_t taskGyroSample(PifTask *p_task)
     pidUpdateCounter++;
 
     if (gyroFilterReady()) {
-        pifTask_SetTrigger(getTask(TASK_FILTER)->p_task);
+        pifTask_SetTrigger(getTask(TASK_FILTER)->p_task, 0);
     }
     if (pidLoopReady()) {
-        pifTask_SetTrigger(getTask(TASK_PID)->p_task);
+        pifTask_SetTrigger(getTask(TASK_PID)->p_task, 0);
     }
 
     // Check for incoming RX data. Don't do this in the checker as that is called repeatedly within

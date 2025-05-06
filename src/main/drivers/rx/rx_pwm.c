@@ -118,7 +118,7 @@ static void _evtRcPpmReceive(PifRc* p_owner, uint16_t* p_channel, PifIssuerP p_i
 		captures[i] = p_channel[i];
 	}
     ppmFrameCount++;
-	pifTask_SetTrigger((PifTask*)p_issuer);
+	pifTask_SetTrigger((PifTask*)p_issuer, 0);
 }
 
 static bool ppmResetDevice(void)
