@@ -362,7 +362,7 @@ void gpsInit(void)
     if (!gpsPort) {
         return;
     }
-    if (!pifUart_AttachTxTask(&gpsPort->uart, TM_EXTERNAL_ORDER, 0, "UART-TX-GPS")) return;
+    if (!pifUart_AttachTxTask(&gpsPort->uart, TM_EXTERNAL, 0, "UART-TX-GPS")) return;
     if (!pifUart_AttachRxTask(&gpsPort->uart, TM_PERIOD, 2000, "UART-RX-GPS")) return;      // 2000ms
 
     // signal GPS "thread" to initialize when it gets to it
