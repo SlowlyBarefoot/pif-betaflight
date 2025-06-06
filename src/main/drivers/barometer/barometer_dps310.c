@@ -149,7 +149,7 @@ bool baroDPS310Detect(baroDev_t *baro)
 
     busDeviceRegister(dev);
 
-    if (!pifDps310_AddTaskForReading(&dps310, 50, baro->evt_read, TRUE)) {   // 50ms : 20hz update rate (20hz LPF on acc)
+    if (!pifDps310_AttachTaskForReading(&dps310, PIF_ID_AUTO, 50, baro->evt_read, TRUE)) {   // 50ms : 20hz update rate (20hz LPF on acc)
         return false;
     }
     dps310._p_task->disallow_yield_id = disallow_yield_id;

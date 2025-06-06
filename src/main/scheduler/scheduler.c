@@ -130,15 +130,15 @@ void setTaskEnabled(taskId_e taskId, bool enabled)
         if (enabled) {
             switch (task->attribute->pifTaskMode) {
             case TM_ALWAYS:
-                task->p_task = pifTaskManager_Add(task->attribute->pifTaskMode, 0, task->attribute->pifTaskFunc, task, true);
+                task->p_task = pifTaskManager_Add(PIF_ID_AUTO, task->attribute->pifTaskMode, 0, task->attribute->pifTaskFunc, task, true);
                 break;
 
             case TM_PERIOD:
-                task->p_task = pifTaskManager_Add(task->attribute->pifTaskMode, task->attribute->desiredPeriodUs, task->attribute->pifTaskFunc, task, true);
+                task->p_task = pifTaskManager_Add(PIF_ID_AUTO, task->attribute->pifTaskMode, task->attribute->desiredPeriodUs, task->attribute->pifTaskFunc, task, true);
                 break;
 
             default:
-                task->p_task = pifTaskManager_Add(task->attribute->pifTaskMode, 0, task->attribute->pifTaskFunc, task, false);
+                task->p_task = pifTaskManager_Add(PIF_ID_AUTO, task->attribute->pifTaskMode, 0, task->attribute->pifTaskFunc, task, false);
                 break;
             }
             task->p_task->name = task->attribute->taskName;
