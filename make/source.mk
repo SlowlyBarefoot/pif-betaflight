@@ -211,6 +211,7 @@ PIF_SRC = \
             ../../pif/source/communication/pif_spi.c \
             ../../pif/source/communication/pif_uart.c \
             ../../pif/source/core/pif.c \
+            ../../pif/source/core/pif_log.c \
             ../../pif/source/core/pif_obj_array.c \
             ../../pif/source/core/pif_ring_buffer.c \
             ../../pif/source/core/pif_task.c \

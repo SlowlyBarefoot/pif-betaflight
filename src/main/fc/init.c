@@ -765,6 +765,10 @@ void init(void)
     LED0_OFF;
     LED1_OFF;
 
+#ifdef USE_LOG
+    logInit();
+#endif
+
     imuInit();
 
     failsafeInit();
