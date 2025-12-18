@@ -215,7 +215,9 @@ PIF_SRC = \
             ../../pif/source/core/pif_obj_array.c \
             ../../pif/source/core/pif_ring_buffer.c \
             ../../pif/source/core/pif_task.c \
+            ../../pif/source/core/pif_task_manager.c \
             ../../pif/source/core/pif_timer.c \
+            ../../pif/source/core/pif_timer_manager.c \
             ../../pif/source/osd/pif_max7456.c \
             ../../pif/source/rc/pif_rc.c \
             ../../pif/source/rc/pif_rc_ibus.c \
