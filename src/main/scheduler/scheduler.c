@@ -90,11 +90,13 @@ void getTaskInfo(taskId_e taskId, taskInfo_t * taskInfo)
     taskInfo->desiredPeriodUs = task->attribute->desiredPeriodUs;
     taskInfo->taskName = task->attribute->taskName;
     taskInfo->subTaskName = task->attribute->subTaskName;
-    taskInfo->maxExecutionTimeUs = p_task->_max_execution_time;
-    taskInfo->totalExecutionTimeUs = p_task->_total_execution_time;
-    taskInfo->averageExecutionTimeUs = pifTask_GetAverageExecuteTime(p_task);
-    taskInfo->averageDeltaTimeUs = pifTask_GetAverageDeltaTime(p_task);
-    taskInfo->latestDeltaTimeUs = p_task->_delta_time;
+    if (taskInfo->isEnabled) {
+        taskInfo->maxExecutionTimeUs = p_task->_max_execution_time;
+        taskInfo->totalExecutionTimeUs = p_task->_total_execution_time;
+        taskInfo->averageExecutionTimeUs = pifTask_GetAverageExecuteTime(p_task);
+        taskInfo->averageDeltaTimeUs = pifTask_GetAverageDeltaTime(p_task);
+        taskInfo->latestDeltaTimeUs = p_task->_delta_time;
+    }
 }
 
 void rescheduleTask(taskId_e taskId, timeDelta_t newPeriodUs)
@@ -155,10 +157,9 @@ timeDelta_t getTaskDeltaTimeUs(taskId_e taskId)
 
     if (taskId < TASK_COUNT) {
         task = getTask(taskId);
-        return task->p_task->_delta_time;
-    } else {
-        return 0;
+        if (task->p_task) return task->p_task->_delta_time;
     }
+    return 0;
 }
 
 // Called by tasks executing what are known to be short states
@@ -193,6 +194,7 @@ void schedulerResetTaskStatistics(taskId_e taskId)
         task->anticipatedExecutionTime = 0;
         task->totalExecutionTimeUs = 0;
         task->maxExecutionTimeUs = 0;
+        if (task->p_task) pifTask_ResetStatistics(task->p_task);
     }
 }
 
@@ -201,6 +203,7 @@ void schedulerResetTaskMaxExecutionTime(taskId_e taskId)
     if (taskId < TASK_COUNT) {
         task_t *task = getTask(taskId);
         task->maxExecutionTimeUs = 0;
+        if (task->p_task) pifTask_ResetMaxExecutionTime(task->p_task);
     }
 }
 

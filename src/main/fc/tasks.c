@@ -231,7 +231,7 @@ static uint32_t taskUpdateRxMain(PifTask *p_task)
     }
 
     if (!schedulerGetIgnoreTaskExecTime()) {
-        executeTimeUs = micros() - pif_timer1us + RX_TASK_MARGIN;
+        executeTimeUs = micros() - p_task->_last_execute_time + RX_TASK_MARGIN;
 
         // If the scheduler has reduced the anticipatedExecutionTime due to task aging, pick that up
         anticipatedExecutionTime = schedulerGetNextStateTime();
