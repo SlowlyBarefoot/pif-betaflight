@@ -210,7 +210,9 @@ PIF_SRC = \
             ../../pif/source/core/pif.c \
             ../../pif/source/core/pif_obj_array.c \
             ../../pif/source/core/pif_task.c \
-            ../../pif/source/core/pif_timer.c
+            ../../pif/source/core/pif_task_manager.c \
+            ../../pif/source/core/pif_timer.c \
+            ../../pif/source/core/pif_timer_manager.c
 
 COMMON_SRC := $(COMMON_SRC) $(COMMON_DEVICE_SRC) $(PIF_SRC)
 

@@ -264,7 +264,7 @@ void init(void)
 
     pif_Init(micros);
 
-    pifTaskManager_Init(TASK_SIZE);
+    pifTaskManager_Init(TASK_SIZE, 1);
 
     pifTimerManager_Init(&g_timer_1ms, PIF_ID_AUTO, 1000, TIMER_1MS_SIZE);		        // 1000us
 
