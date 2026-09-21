@@ -66,8 +66,7 @@ BIN_DIR         := $(ROOT)/obj
 CMSIS_DIR       := $(ROOT)/lib/main/CMSIS
 INCLUDE_DIRS    := $(SRC_DIR) \
                    $(ROOT)/src/main/target \
-                   $(ROOT)/src/main/startup \
-				   $(ROOT)/../pif/include				   
+                   $(ROOT)/src/main/startup
 LINKER_DIR      := $(ROOT)/src/link
 
 ## V                 : Set verbosity level based on the V= parameter
@@ -215,6 +214,9 @@ VPATH           := $(VPATH):$(TARGET_DIR)
 
 include $(ROOT)/make/source.mk
 
+# PIF sources and include paths
+include $(ROOT)/make/pif.mk
+
 ###############################################################################
 # Things that might need changing to use different tools
 #
@@ -269,7 +271,6 @@ CFLAGS     += $(ARCH_FLAGS) \
               -D'__FORKNAME__="$(FORKNAME)"' \
               -D'__TARGET__="$(TARGET)"' \
               -D'__REVISION__="$(REVISION)"' \
-			  -DPIF_CONF \
               -save-temps=obj \
               -MMD -MP \
               $(EXTRA_FLAGS)

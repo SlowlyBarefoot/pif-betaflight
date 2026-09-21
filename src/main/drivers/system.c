@@ -23,7 +23,6 @@
 #include <string.h>
 
 #include "platform.h"
-#include "pif_linker.h"
 
 #include "build/atomic.h"
 
@@ -33,6 +32,7 @@
 #include "drivers/resource.h"
 #include "drivers/sound_beeper.h"
 
+#include "pif/pif_linker.h"
 
 #include "system.h"
 
@@ -96,14 +96,16 @@ void SysTick_Handler(void)
         sysTickPending = 0;
         (void)(SysTick->CTRL);
     }
-
-    pif_sigTimer1ms();
-	pifTimerManager_sigTick(&g_timer_1ms);
-
 #ifdef USE_HAL_DRIVER
     // used by the HAL for some timekeeping and timeouts, should always be 1ms
     HAL_IncTick();
 #endif
+
+    // PIF's 1 ms tick. Outside the ATOMIC_BLOCK above: it only advances
+    // counters and walks the 1 ms timer list, and holding BASEPRI at
+    // NVIC_PRIO_MAX across it would extend the interrupt latency of every
+    // other peripheral. Does nothing until pifLinker_Init() has succeeded.
+    pifLinker_sigTimer1ms();
 }
 
 // Return system uptime in microseconds (rollover in 70minutes)

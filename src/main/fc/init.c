@@ -24,7 +24,6 @@
 #include <math.h>
 
 #include "platform.h"
-#include "pif_linker.h"
 
 #include "blackbox/blackbox.h"
 
@@ -131,6 +130,8 @@
 #include "msp/msp_serial.h"
 
 #include "osd/osd.h"
+
+#include "pif/pif_linker.h"
 
 #include "pg/adc.h"
 #include "pg/beeper.h"
@@ -262,11 +263,13 @@ void init(void)
 
     systemInit();
 
-    pif_Init(micros);
-
-    pifTaskManager_Init(TASK_SIZE, 1);
-
-    pifTimerManager_Init(&g_timer_1ms, PIF_ID_AUTO, 1000, TIMER_1MS_SIZE);		        // 1000us
+    // PIF has to come up before anything that could use it, and after
+    // systemInit() because it is handed micros() as its 1 us clock. The
+    // returned PifError is dropped on purpose: a failure leaves the 1 ms tick
+    // and the PIF loop dormant, and nothing depends on PIF yet, so the flight
+    // controller carries on either way. Once tasks live on PIF this has to
+    // become a failureMode().
+    pifLinker_Init();
 
     // Initialize task data as soon as possible. Has to be done before tasksInit(),
     // and any init code that may try to modify task behaviour before tasksInit().
