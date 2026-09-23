@@ -507,6 +507,15 @@ uint16_t i2cGetErrorCounter(void)
     return i2cErrorCount;
 }
 
+void i2cRecover(I2CDevice device)
+{
+    if (device == I2CINVALID || device >= I2CDEV_COUNT) {
+        return;
+    }
+
+    i2cHandleHardwareFailure(device);
+}
+
 static void i2cUnstick(IO_t scl, IO_t sda)
 {
     int i;

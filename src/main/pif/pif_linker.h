@@ -24,6 +24,7 @@
 
 #include "core/pif.h"
 #include "core/pif_task_manager.h"
+#include "sensor/pif_imu_sensor.h"
 
 // Number of PifTask slots the task manager is created with. Every Betaflight
 // task takes one (scheduler.c registers the whole table), TASK_COUNT in
@@ -52,6 +53,9 @@
 //   PIF_TASK_SIZE       x (8 + sizeof(PifTask))
 //   PIF_TASK_TIMER_SIZE x (8 + sizeof(PifTaskTimer))
 //   PIF_TIMER_1MS_SIZE  x (8 + sizeof(PifTimer)) + 4 bytes per removal slot
+//   I2C_PIF_DEVICE_COUNT x (8 + sizeof(PifI2cDevice)) per I2C bus a PIF
+//                       driver uses (drivers/bus_i2c_pif.c, allocated on
+//                       first use rather than in pifLinker_Init())
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take
@@ -59,6 +63,13 @@
 // 6.7 KB and leave about 1.5 KB spare. Anything added to PifTask costs 152
 // bytes here per 40 slots, so check this figure when PIF grows a field.
 #define PIF_HEAP_SIZE			8192
+
+// The one PifImuSensor of the board. A PIF gyro, accelerometer or magnetometer
+// driver registers its read function and gain on it when it is initialised,
+// and all three share it, so every PIF sensor driver has to be handed this
+// instance rather than one of its own. pifLinker_Init() clears it; the PIF
+// alignment is left unset because Betaflight aligns the samples itself.
+extern PifImuSensor g_imu_sensor;
 
 // Initialises pif, the task manager and the 1 ms timer manager, in that order.
 // Must run after systemInit(), because pif is handed micros() as its 1 us

@@ -19,6 +19,8 @@
 #include "core/pif_timer_manager.h"
 
 
+PifImuSensor g_imu_sensor;
+
 // The 1 ms timer manager. Nothing registers a PifTimer on it yet; it exists so
 // that the tick path is in place and can be measured.
 static PifTimerManager s_timer1ms;
@@ -92,6 +94,10 @@ uint8_t pifLinker_Init(void)
     // finds it dormant already.
     s_init_error = PIF_LINKER_DOWN;
     pif_error = E_SUCCESS;
+
+    // Before the sensors are detected, which is where the PIF drivers attach
+    // themselves to it.
+    pifImuSensor_Init(&g_imu_sensor);
 
     // pif_Init() stores the clock callback; pifTaskManager_Init() below reads
     // it straight away to stamp the CPU load window, so micros() has to be

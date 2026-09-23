@@ -127,6 +127,14 @@ uint16_t i2cGetErrorCounter(void)
     return i2cErrorCount;
 }
 
+// Transfers here complete before they return, so there is nothing to give up
+// on; reinitialise the peripheral anyway, as a timeout would leave it unknown.
+void i2cRecover(I2CDevice device)
+{
+    i2cTimeoutUserCallback();
+    i2cInit(device);
+}
+
 bool i2cWrite(I2CDevice device, uint8_t addr_, uint8_t reg, uint8_t data)
 {
     if (device == I2CINVALID || device >= I2CDEV_COUNT) {

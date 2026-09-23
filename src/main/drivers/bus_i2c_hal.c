@@ -99,6 +99,11 @@ uint16_t i2cGetErrorCounter(void)
     return i2cErrorCount;
 }
 
+void i2cRecover(I2CDevice device)
+{
+    i2cHandleHardwareFailure(device);
+}
+
 // Blocking write
 bool i2cWrite(I2CDevice device, uint8_t addr_, uint8_t reg_, uint8_t data)
 {

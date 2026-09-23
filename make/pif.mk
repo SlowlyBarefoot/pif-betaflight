@@ -11,7 +11,8 @@
 #
 #     PIF_DIR := /path/to/pif
 #
-# Only the core sources needed so far are built. pif_log.c is left out because
+# Only the sources needed so far are built: the core, and pif_i2c, pif_imu_sensor
+# and pif_qmc5883 for the QMC5883L compass driver. pif_log.c is left out because
 # PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -27,7 +28,7 @@ INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(PIF_DIR)/include \
                    $(ROOT)/src/main/pif
 
-VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(ROOT)/src/main/pif
+VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(ROOT)/src/main/pif
 
 PIF_SRC = \
             pif.c \
@@ -36,6 +37,9 @@ PIF_SRC = \
             pif_task_manager.c \
             pif_timer.c \
             pif_timer_manager.c \
+            pif_i2c.c \
+            pif_imu_sensor.c \
+            pif_qmc5883.c \
             pif_linker.c
 
 SRC += $(PIF_SRC)
