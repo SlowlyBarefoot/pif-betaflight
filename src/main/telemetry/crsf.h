@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -47,7 +50,7 @@ bool handleCrsfMspFrameBuffer(mspResponseFnPtr responseFn);
 int getCrsfMspFrame(uint8_t *frame, uint8_t *payload, const uint8_t payloadSize);
 #endif
 #if defined(USE_CRSF_V3)
-void speedNegotiationProcess(uint32_t currentTime);
+uint32_t speedNegotiationProcess(PifTask *p_task);
 bool crsfBaudNegotiationInProgress(void);
 uint32_t getCrsfCachedBaudrate(void);
 #endif

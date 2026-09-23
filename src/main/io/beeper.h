@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "common/time.h"
 
 #define BEEPER_GET_FLAG(mode) (1 << (mode - 1))
@@ -95,7 +98,7 @@ typedef enum {
 
 void beeper(beeperMode_e mode);
 void beeperSilence(void);
-void beeperUpdate(timeUs_t currentTimeUs);
+uint32_t beeperUpdate(PifTask *p_task);
 void beeperConfirmationBeeps(uint8_t beepCount);
 void beeperWarningBeeps(uint8_t beepCount);
 uint32_t getArmingBeepTimeMicros(void);

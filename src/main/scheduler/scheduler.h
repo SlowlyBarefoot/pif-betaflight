@@ -24,6 +24,11 @@
 #include "config/config.h"
 #include "pg/scheduler.h"
 
+// A Betaflight task is a PifTask, and its task function is a PifEvtTaskLoop.
+// Both types come from here. See src/main/pif/pif_linker.h on the MIN/MAX
+// collision this used to cause and how both sides are guarded now.
+#include "pif/pif_linker.h"
+
 #define TASK_PERIOD_HZ(hz) (1000000 / (hz))
 #define TASK_PERIOD_MS(ms) ((ms) * 1000)
 #define TASK_PERIOD_US(us) (us)
@@ -32,34 +37,13 @@
 
 #define LOAD_PERCENTAGE_ONE             100
 
-#define SCHED_TASK_DEFER_MASK           0x07 // Scheduler loop count is masked with this and when 0 long running tasks are processed
-
-#define SCHED_START_LOOP_MIN_US         1   // Wait at start of scheduler loop if gyroTask is nearly due
-#define SCHED_START_LOOP_MAX_US         12
-#define SCHED_START_LOOP_DOWN_STEP      50  // Fraction of a us to reduce start loop wait
-#define SCHED_START_LOOP_UP_STEP        1   // Fraction of a us to increase start loop wait
-
-#define TASK_GUARD_MARGIN_MIN_US        3   // Add an amount to the estimate of a task duration
-#define TASK_GUARD_MARGIN_MAX_US        6
-#define TASK_GUARD_MARGIN_DOWN_STEP     50  // Fraction of a us to reduce task guard margin
-#define TASK_GUARD_MARGIN_UP_STEP       1   // Fraction of a us to increase task guard margin
-
-#define CHECK_GUARD_MARGIN_US           2   // Add a margin to the amount of time allowed for a check function to run
-
 // Some tasks have occasional peaks in execution time so normal moving average duration estimation doesn't work
 // Decay the estimated max task duration by 1/(1 << TASK_EXEC_TIME_SHIFT) on every invocation
 #define TASK_EXEC_TIME_SHIFT            7
 
-#define TASK_AGE_EXPEDITE_RX            schedulerConfig()->rxRelaxDeterminism  // Make RX tasks more schedulable if it's failed to be scheduled this many times
-#define TASK_AGE_EXPEDITE_OSD           schedulerConfig()->osdRelaxDeterminism  // Make OSD tasks more schedulable if it's failed to be scheduled this many times
-#define TASK_AGE_EXPEDITE_COUNT         1   // Make aged tasks more schedulable
-#define TASK_AGE_EXPEDITE_SCALE         0.9 // By scaling their expected execution time
-
-// Gyro interrupt counts over which to measure loop time and skew
-#define GYRO_RATE_COUNT 25000
-#define GYRO_LOCK_COUNT 50
-
 typedef enum {
+    // Kept for the task table. The scheduler no longer orders the ring by
+    // priority; see maxSkipForTask() in scheduler.c for what it does decide.
     TASK_PRIORITY_REALTIME = -1, // Task will be run outside the scheduler logic
     TASK_PRIORITY_LOWEST = 1,
     TASK_PRIORITY_LOW = 2,
@@ -85,13 +69,17 @@ typedef struct {
     timeDelta_t  latestDeltaTimeUs;
     timeUs_t     maxExecutionTimeUs;
     timeUs_t     totalExecutionTimeUs;
+    // PIF averages in whole microseconds, so the tenths these carry are always
+    // zero. The names and the scale are kept because that is what the CLI and
+    // the OSD task list format against.
     timeUs_t     averageExecutionTime10thUs;
     timeUs_t     averageDeltaTime10thUs;
-    float        movingAverageCycleTimeUs;
 #if defined(USE_LATE_TASK_STATISTICS)
-    uint32_t     runCount;
-    uint32_t     lateCount;
-    timeUs_t     execTime;
+    // Longest the dispatch of this task has ever trailed its release. It
+    // replaces the late/run counts the old scheduler kept: PIF measures the
+    // delay of every dispatch, so the worst case is had for free, while a
+    // count of late runs would need a wrapper around every task to keep.
+    timeUs_t     maxDelayUs;
 #endif
 } taskInfo_t;
 
@@ -190,37 +178,33 @@ typedef struct {
     // Configuration
     const char * taskName;
     const char * subTaskName;
+    // Event driven tasks. Run from the idle pass of the scheduler; a check that
+    // answers yes triggers the task. NULL for a task that only runs on its
+    // period.
     bool (*checkFunc)(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs);
-    void (*taskFunc)(timeUs_t currentTimeUs);
+    // The task itself, called by PIF with its own PifTask. A non zero return
+    // sets the period of the next release for TM_PERIOD, which is how a task
+    // reschedules itself, and is ignored for the other modes.
+    PifEvtTaskLoop taskFunc;
+    PifTaskMode pifTaskMode;            // TM_PERIOD, TM_REALTIME or TM_EXTERNAL
     timeDelta_t desiredPeriodUs;        // target period of execution
-    const int8_t staticPriority;        // dynamicPriority grows in steps of this size
+    const int8_t staticPriority;        // how long the task may be held back by the realtime guard
 } task_attribute_t;
 
 typedef struct {
     // Task static data
     task_attribute_t *attribute;
 
-    // Scheduling
-    uint16_t dynamicPriority;           // measurement of how old task was last executed, used to avoid task starvation
-    uint16_t taskAgePeriods;
-    timeDelta_t taskLatestDeltaTimeUs;
-    timeUs_t lastExecutedAtUs;          // last time of invocation
-    timeUs_t lastSignaledAtUs;          // time of invocation event for event-driven tasks
-    timeUs_t lastDesiredAt;             // time of last desired execution
+    // The release, the timing and every statistic belong to this. NULL until
+    // schedulerInit() has registered the task, and for a task this build has
+    // compiled out.
+    PifTask *p_task;
 
-    // Statistics
-    float    movingAverageCycleTimeUs;
-    timeUs_t anticipatedExecutionTime;  // Fixed point expectation of next execution time
-    timeUs_t movingSumDeltaTime10thUs;  // moving sum over 64 samples
-    timeUs_t movingSumExecutionTime10thUs;
-    timeUs_t maxExecutionTimeUs;
-    timeUs_t totalExecutionTimeUs;      // total time consumed by task since boot
-    timeUs_t lastStatsAtUs;             // time of last stats gathering for rate calculation
-#if defined(USE_LATE_TASK_STATISTICS)
-    uint32_t runCount;
-    uint32_t lateCount;
-    timeUs_t execTime;
-#endif
+    // What the task last declared through schedulerSetNextStateTime(), kept so
+    // that schedulerGetNextStateTime() hands the same number back. A state
+    // machine uses the pair to carry its own per state estimate across runs;
+    // the copy PIF gets is consumed by the dispatch it applies to.
+    timeUs_t anticipatedExecutionTime;
 } task_t;
 
 void getCheckFuncInfo(cfCheckFuncInfo_t *checkFuncInfo);
@@ -228,8 +212,6 @@ void getTaskInfo(taskId_e taskId, taskInfo_t *taskInfo);
 void rescheduleTask(taskId_e taskId, timeDelta_t newPeriodUs);
 void setTaskEnabled(taskId_e taskId, bool newEnabledState);
 timeDelta_t getTaskDeltaTimeUs(taskId_e taskId);
-void schedulerIgnoreTaskStateTime();
-void schedulerIgnoreTaskExecRate();
 void schedulerIgnoreTaskExecTime();
 bool schedulerGetIgnoreTaskExecTime();
 void schedulerResetTaskStatistics(taskId_e taskId);
@@ -238,9 +220,16 @@ void schedulerResetCheckFunctionMaxExecutionTime(void);
 void schedulerSetNextStateTime(timeDelta_t nextStateTime);
 timeDelta_t schedulerGetNextStateTime();
 void schedulerInit(void);
-void scheduler(void);
-timeUs_t schedulerExecuteTask(task_t *selectedTask, timeUs_t currentTimeUs);
-void taskSystemLoad(timeUs_t currentTimeUs);
-void schedulerEnableGyro(void);
+uint32_t taskSystemLoad(PifTask *p_task);
 uint16_t getAverageSystemLoadPercent(void);
-float schedulerGetCycleTimeMultiplier(void);
+
+// Longest delay from the release of TASK_GYRO to its dispatch, and the number of
+// those releases that were delayed by more than a whole gyro period. Both are
+// measured by PIF across the realtime task and reported by the CLI.
+uint32_t schedulerGetRealtimeMaxDelayUs(void);
+uint32_t schedulerGetRealtimeMissCount(void);
+
+// Clears both, along with the margin PIF keeps in front of the gyro release.
+// For one off events only - a long blocking run that is over, or the start of a
+// phase whose numbers should stand on their own. See the definition.
+void schedulerResetRealtime(void);

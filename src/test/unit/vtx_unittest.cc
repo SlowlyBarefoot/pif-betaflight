@@ -167,7 +167,7 @@ extern "C" {
     void processRcCommand(void) {}
     void updateGpsStateForHomeAndHoldMode(void) {}
     void blackboxUpdate(timeUs_t) {}
-    void transponderUpdate(timeUs_t) {}
+    uint32_t transponderUpdate(PifTask *) { return 0; }
     void GPS_reset_home_position(void) {}
     void accStartCalibration(void) {}
     void baroSetGroundLevel(void) {}
@@ -198,4 +198,5 @@ extern "C" {
     void sbufWriteU16(sbuf_t *, uint16_t) {}
     void sbufWriteU32(sbuf_t *, uint32_t) {}
     void schedulerSetNextStateTime(timeDelta_t) {}
+    void schedulerResetRealtime(void) {}
 }

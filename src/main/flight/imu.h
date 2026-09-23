@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "common/axis.h"
 #include "common/time.h"
 #include "common/maths.h"
@@ -71,6 +74,7 @@ void imuConfigure(uint16_t throttle_correction_angle, uint8_t throttle_correctio
 float getCosTiltAngle(void);
 void getQuaternion(quaternion * q);
 void imuUpdateAttitude(timeUs_t currentTimeUs);
+uint32_t imuAttitudeTask(PifTask *p_task);
 
 void imuInit(void);
 

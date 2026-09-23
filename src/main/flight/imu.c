@@ -568,6 +568,16 @@ static int calculateThrottleAngleCorrection(void)
     return lrintf(throttleAngleValue * sin_approx(angle / (900.0f * M_PIf / 2.0f)));
 }
 
+// PIF entry point for this module's task. imuUpdateAttitude() keeps the signature
+// it has, because the SITL target calls it outside the scheduler,
+// so the task table gets this instead of the module changing shape around
+// the scheduler.
+uint32_t imuAttitudeTask(PifTask *p_task)
+{
+    imuUpdateAttitude(p_task->_last_execute_time);
+    return 0;
+}
+
 void imuUpdateAttitude(timeUs_t currentTimeUs)
 {
     if (sensors(SENSOR_ACC) && acc.isAccelUpdatedAtLeastOnce) {
@@ -593,7 +603,7 @@ void imuUpdateAttitude(timeUs_t currentTimeUs)
         acc.accADC[X] = 0;
         acc.accADC[Y] = 0;
         acc.accADC[Z] = 0;
-        schedulerIgnoreTaskStateTime();
+        schedulerIgnoreTaskExecTime();
     }
 }
 #endif // USE_ACC

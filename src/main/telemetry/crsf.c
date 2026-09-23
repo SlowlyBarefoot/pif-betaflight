@@ -452,8 +452,10 @@ void crsfScheduleSpeedNegotiationResponse(void)
     crsfSpeed.isNewSpeedValid = false;
 }
 
-void speedNegotiationProcess(timeUs_t currentTimeUs)
+uint32_t speedNegotiationProcess(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     if (crsfSpeed.hasPendingReply) {
         bool found = ((crsfSpeed.index < BAUD_COUNT) && crsfRxUseNegotiatedBaud()) ? true : false;
         sbuf_t crsfSpeedNegotiationBuf;
@@ -483,6 +485,7 @@ void speedNegotiationProcess(timeUs_t currentTimeUs)
         crsfFinalize(dst);
         crsfRxSendTelemetryData();
     }
+    return 0;
 }
 #endif
 

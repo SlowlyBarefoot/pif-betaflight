@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -41,6 +44,7 @@ extern bool rcdeviceInMenu;
 
 void rcdeviceInit(void);
 void rcdeviceUpdate(timeUs_t currentTimeUs);
+uint32_t rcdeviceTask(PifTask *p_task);
 
 bool rcdeviceIsEnabled(void);
 

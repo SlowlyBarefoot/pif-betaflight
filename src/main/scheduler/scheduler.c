@@ -18,15 +18,66 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define SRC_MAIN_SCHEDULER_C_
+/*
+ * scheduler.c - Betaflight's scheduler, on PIF's task manager.
+ *
+ * The queue, the dynamic priorities and the cycle counter of the scheduler this
+ * replaces are gone; PIF decides when a task runs. There is no dispatch wrapper
+ * left either:
+ * a Betaflight task function is a PifEvtTaskLoop and PIF calls it directly, so
+ * the release, the timing and every statistic have exactly one owner. What is
+ * left in this file is registration, the scheduler.h API the rest of the
+ * firmware still calls, and the check functions of the event driven tasks.
+ *
+ * The mapping, taken from task_attribute_t::pifTaskMode in fc/tasks.c:
+ *
+ *   TASK_GYRO           TM_REALTIME, period gyro.sampleLooptime
+ *   TASK_FILTER         TM_EXTERNAL, released by taskGyroSample()
+ *   TASK_PID            TM_EXTERNAL, released by taskGyroSample(), or by
+ *                       taskFiltering() when both fall in the same gyro cycle
+ *   everything else     TM_PERIOD, period task_attribute_t::desiredPeriodUs
+ *
+ * PIF releases the realtime task ahead of the whole ring and refuses to start
+ * any other task whose run would not finish before that release. The length it
+ * judges by is the measured maximum over a moving window, or what the task
+ * declared through schedulerSetNextStateTime() for its next run. That is what
+ * the old scheduler did by hand with anticipatedExecutionTime, taskGuardCycles
+ * and the busy wait on the cycle counter, so none of it is here.
+ *
+ * What the old scheduler did and this does not:
+ *
+ * - The gyro EXTI lock. scheduler() measured the real gyro interrupt rate and
+ *   slid its target time to take out the skew. PIF releases TM_REALTIME on the
+ *   micros() grid instead. To get the lock back, the PIF way is a
+ *   pifTask_SetTrigger() from the gyro EXTI handler and a period of zero.
+ * - Static priority ordering. PIF's ring is round robin. The priorities are
+ *   folded into PifTask::max_skip below, which is how long a task may be held
+ *   back by the realtime guard, so a high priority task still gets through
+ *   sooner.
+ * - schedulerIgnoreTaskExecRate(), which is gone along with its call sites. It
+ *   kept one state of a state machine from defining the reported rate. PIF
+ *   writes _delta_time when it decides to release a task, not when it
+ *   dispatches it, so there is no point at which a run can be left out of the
+ *   measurement; a state machine now reports its dispatch rate rather than its
+ *   logical cycle rate. Bringing it back means a PifTask that can skip a delta
+ *   sample, the way pifTask_IgnoreBlockTime() skips a block time sample.
+ *
+ * One consequence to keep in mind: a PIF trigger is not subject to the
+ * realtime guard, so a triggered dispatch happens without asking whether the
+ * run fits before the next gyro release. TASK_FILTER and TASK_PID want exactly
+ * that. TASK_RX and TASK_OSD get it too, because their check functions release
+ * them the same way, so those two can start late in a gyro period where the
+ * old scheduler would have held them back. They are the two tasks Betaflight
+ * already lets break determinism on purpose - that is what rx_relax_determinism
+ * and osd_relax_determinism are - but here it is every release rather than a
+ * last resort.
+ */
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "platform.h"
-
-#include "drivers/accgyro/accgyro.h"
 
 #include "build/build_config.h"
 #include "build/debug.h"
@@ -36,169 +87,150 @@
 #include "common/utils.h"
 
 #include "drivers/time.h"
-#include "drivers/accgyro/accgyro.h"
-#include "drivers/system.h"
 
-#include "fc/core.h"
 #include "fc/tasks.h"
-
-#include "rx/rx.h"
-#include "flight/failsafe.h"
 
 #include "scheduler.h"
 
-#include "sensors/gyro_init.h"
-
-// DEBUG_SCHEDULER, timings for:
-// 0 - Average time spent executing check function
-// 1 - Time spent priortising
-// 2 - time spent in scheduler
-
-// DEBUG_SCHEDULER_DETERMINISM, requires USE_LATE_TASK_STATISTICS to be defined
-// 0 - Gyro task start cycle time in 10th of a us
-// 1 - ID of late task
-// 2 - Amount task is late in 10th of a us
-// 3 - Gyro lock skew in 10th of a us
-
-// DEBUG_TIMING_ACCURACY, requires USE_LATE_TASK_STATISTICS to be defined
-// 0 - % CPU busy
-// 1 - Tasks late in last second
-// 2 - Total lateness in last second in 10ths us
-// 3 - Total tasks run in last second
 
 extern task_t tasks[];
 
-static FAST_DATA_ZERO_INIT task_t *currentTask = NULL;
-static FAST_DATA_ZERO_INIT bool ignoreCurrentTaskExecRate;
-static FAST_DATA_ZERO_INIT bool ignoreCurrentTaskExecTime;
+// The tasks that carry a checkFunc, gathered from the attribute table at init
+// so the idle callback does not walk all of TASK_COUNT on every pass. Only
+// TASK_RX and TASK_OSD have one.
+static FAST_DATA_ZERO_INIT taskId_e checkTaskIds[TASK_COUNT];
+static FAST_DATA_ZERO_INIT int checkTaskCount;
 
-int32_t schedLoopStartCycles;
-static int32_t schedLoopStartMinCycles;
-static int32_t schedLoopStartMaxCycles;
-static uint32_t schedLoopStartDeltaDownCycles;
-static uint32_t schedLoopStartDeltaUpCycles;
+// Which dispatch called schedulerIgnoreTaskExecTime(). Keyed by the task and
+// by the timestamp PIF stamped that dispatch with, so the flag clears itself
+// when the next run starts - there is no wrapper left to clear it in, and a
+// plain bool would leak into the run after the one that set it.
+static FAST_DATA_ZERO_INIT PifTask *ignoreExecTimeTask;
+static FAST_DATA_ZERO_INIT uint32_t ignoreExecTimeAt;
 
-int32_t taskGuardCycles;
-static int32_t taskGuardMinCycles;
-static int32_t taskGuardMaxCycles;
-static uint32_t taskGuardDeltaDownCycles;
-static uint32_t taskGuardDeltaUpCycles;
-
-FAST_DATA_ZERO_INIT uint16_t averageSystemLoadPercent = 0;
-
-static FAST_DATA_ZERO_INIT int taskQueuePos = 0;
-STATIC_UNIT_TESTED FAST_DATA_ZERO_INIT int taskQueueSize = 0;
-
-static FAST_DATA_ZERO_INIT bool gyroEnabled;
-
-static int32_t desiredPeriodCycles;
-static uint32_t lastTargetCycles;
-
-static uint8_t skippedRxAttempts = 0;
-#ifdef USE_OSD
-static uint8_t skippedOSDAttempts = 0;
-#endif
-
-#if defined(USE_LATE_TASK_STATISTICS)
-static int16_t lateTaskCount = 0;
-static uint32_t lateTaskTotal = 0;
-static int16_t taskCount = 0;
-static uint32_t nextTimingCycles;
-#endif
-
-static timeMs_t lastFailsafeCheckMs = 0;
-
-// No need for a linked list for the queue, since items are only inserted at startup
-
-STATIC_UNIT_TESTED FAST_DATA_ZERO_INIT task_t* taskQueueArray[TASK_COUNT + 1]; // extra item for NULL pointer at end of queue
-
-void queueClear(void)
-{
-    memset(taskQueueArray, 0, sizeof(taskQueueArray));
-    taskQueuePos = 0;
-    taskQueueSize = 0;
-}
-
-bool queueContains(task_t *task)
-{
-    for (int ii = 0; ii < taskQueueSize; ++ii) {
-        if (taskQueueArray[ii] == task) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool queueAdd(task_t *task)
-{
-    if ((taskQueueSize >= TASK_COUNT) || queueContains(task)) {
-        return false;
-    }
-    for (int ii = 0; ii <= taskQueueSize; ++ii) {
-        if (taskQueueArray[ii] == NULL || taskQueueArray[ii]->attribute->staticPriority < task->attribute->staticPriority) {
-            memmove(&taskQueueArray[ii+1], &taskQueueArray[ii], sizeof(task) * (taskQueueSize - ii));
-            taskQueueArray[ii] = task;
-            ++taskQueueSize;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool queueRemove(task_t *task)
-{
-    for (int ii = 0; ii < taskQueueSize; ++ii) {
-        if (taskQueueArray[ii] == task) {
-            memmove(&taskQueueArray[ii], &taskQueueArray[ii+1], sizeof(task) * (taskQueueSize - ii));
-            --taskQueueSize;
-            return true;
-        }
-    }
-    return false;
-}
-
-/*
- * Returns first item queue or NULL if queue empty
- */
-FAST_CODE task_t *queueFirst(void)
-{
-    taskQueuePos = 0;
-    return taskQueueArray[0]; // guaranteed to be NULL if queue is empty
-}
-
-/*
- * Returns next item in queue or NULL if at end of queue
- */
-FAST_CODE task_t *queueNext(void)
-{
-    return taskQueueArray[++taskQueuePos]; // guaranteed to be NULL at end of queue
-}
-
-static timeUs_t taskTotalExecutionTime = 0;
-
-void taskSystemLoad(timeUs_t currentTimeUs)
-{
-    static timeUs_t lastExecutedAtUs;
-    timeDelta_t deltaTime = cmpTimeUs(currentTimeUs, lastExecutedAtUs);
-
-    // Calculate system load
-    if (deltaTime) {
-        averageSystemLoadPercent = 100 * taskTotalExecutionTime / deltaTime;
-        taskTotalExecutionTime = 0;
-        lastExecutedAtUs = currentTimeUs;
-    } else {
-        schedulerIgnoreTaskExecTime();
-    }
-
-#if defined(SIMULATOR_BUILD)
-    averageSystemLoadPercent = 0;
-#endif
-}
+static FAST_DATA_ZERO_INIT uint16_t averageSystemLoadPercent;
 
 timeUs_t checkFuncMaxExecutionTimeUs;
 timeUs_t checkFuncTotalExecutionTimeUs;
 timeUs_t checkFuncMovingSumExecutionTimeUs;
 timeUs_t checkFuncMovingSumDeltaTimeUs;
+
+
+// The realtime guard holds a task back while its run would not finish before
+// the next gyro release, and max_skip is how many passes in a row it may do
+// that before letting the task through anyway. The old scheduler used
+// staticPriority to pick what ran first; here it picks what waits least.
+static uint16_t maxSkipForTask(taskId_e taskId, int8_t staticPriority)
+{
+    // rx_relax_determinism and osd_relax_determinism say how many refused
+    // attempts these two may collect before they are scheduled regardless of
+    // the determinism it costs. That is what PifTask::max_skip counts, so the
+    // settings keep their meaning.
+    if ((taskId == TASK_RX) && schedulerConfig()->rxRelaxDeterminism) {
+        return schedulerConfig()->rxRelaxDeterminism;
+    }
+#ifdef USE_OSD
+    if ((taskId == TASK_OSD) && schedulerConfig()->osdRelaxDeterminism) {
+        return schedulerConfig()->osdRelaxDeterminism;
+    }
+#endif
+
+    if (staticPriority >= TASK_PRIORITY_HIGH) {
+        return 2;
+    }
+    if (staticPriority <= TASK_PRIORITY_LOWEST) {
+        return 10;
+    }
+    return 12 - 2 * staticPriority;
+}
+
+// Resolves TASK_SELF through PIF rather than through a global of our own, and
+// rejects anything that is not a real task. Returns NULL when there is nothing
+// to act on, which every caller below tests for.
+static task_t *resolveTask(taskId_e taskId)
+{
+    if (taskId == TASK_SELF) {
+        PifTask *p_task = pifTaskManager_CurrentTask();
+        return p_task ? (task_t *)p_task->_p_client : NULL;
+    }
+    return (taskId < TASK_COUNT) ? getTask(taskId) : NULL;
+}
+
+// TM_EXTERNAL has no period of its own; for the rest it is what the task table
+// asked for, as rescheduleTask() may since have changed it.
+static uint32_t taskPeriodUs(const task_t *task)
+{
+    if (task->attribute->pifTaskMode == TM_EXTERNAL) return 0;
+
+    return (uint32_t)task->attribute->desiredPeriodUs;
+}
+
+// pifTask_GetAverage*() reports PIF_TASK_AVERAGE_NONE until it has enough
+// samples. The CLI wants a number it can divide, and zero is what it showed
+// before the first samples arrived anyway.
+static uint32_t averageOrZero(uint32_t average)
+{
+    return (average == PIF_TASK_AVERAGE_NONE) ? 0 : average;
+}
+
+// PIF's idle callback: it runs only on a pass that dispatched no task, and
+// only while its measured run still fits before the next gyro release. That is
+// where the check functions of the event driven tasks belong - the old
+// scheduler guarded them with a margin of its own for the same reason, and
+// running them here also keeps them from ever landing between TASK_GYRO and
+// TASK_FILTER.
+static FAST_CODE void schedulerIdle(void)
+{
+    const timeUs_t currentTimeUs = micros();
+
+    for (int i = 0; i < checkTaskCount; i++) {
+        task_t *task = getTask(checkTaskIds[i]);
+        PifTask *p_task = task->p_task;
+
+        // Disabled, or already signalled and waiting for its turn. __trigger is
+        // private to PIF and there is no accessor for it; it is only read here,
+        // and it holds exactly the "signalled but not yet run" state that the
+        // old scheduler kept in dynamicPriority.
+        if (!p_task || p_task->__trigger) {
+            continue;
+        }
+
+        if (task->attribute->checkFunc(currentTimeUs, cmpTimeUs(currentTimeUs, p_task->_last_execute_time))) {
+            const timeUs_t checkFuncExecutionTimeUs = cmpTimeUs(micros(), currentTimeUs);
+            checkFuncMovingSumExecutionTimeUs += checkFuncExecutionTimeUs - checkFuncMovingSumExecutionTimeUs / TASK_STATS_MOVING_SUM_COUNT;
+            checkFuncMovingSumDeltaTimeUs += p_task->_delta_time - checkFuncMovingSumDeltaTimeUs / TASK_STATS_MOVING_SUM_COUNT;
+            checkFuncTotalExecutionTimeUs += checkFuncExecutionTimeUs;   // time consumed by scheduler + task
+            if (checkFuncExecutionTimeUs > checkFuncMaxExecutionTimeUs) {
+                checkFuncMaxExecutionTimeUs = checkFuncExecutionTimeUs;
+            }
+            pifTask_SetTrigger(p_task, 0);
+        }
+    }
+}
+
+uint32_t taskSystemLoad(PifTask *p_task)
+{
+    UNUSED(p_task);
+
+    // PIF closes its own measurement window once a second and reports the share
+    // of it spent in tasks and in the timer and idle callbacks.
+    averageSystemLoadPercent = pif_performance._task_load;
+
+#if defined(SIMULATOR_BUILD)
+    averageSystemLoadPercent = 0;
+#endif
+
+    // 0 - % CPU busy
+    // 1 - gyro releases that slipped a whole period since boot
+    // 2 - longest delay from a gyro release to its dispatch, in us
+    DEBUG_SET(DEBUG_TIMING_ACCURACY, 0, averageSystemLoadPercent);
+    DEBUG_SET(DEBUG_TIMING_ACCURACY, 1, pif_performance._miss_count);
+    DEBUG_SET(DEBUG_TIMING_ACCURACY, 2, pif_performance._max_delay);
+
+    // Shorter than the moving average of the samples that do the reporting above
+    schedulerIgnoreTaskExecTime();
+    return 0;
+}
 
 void getCheckFuncInfo(cfCheckFuncInfo_t *checkFuncInfo)
 {
@@ -208,119 +240,149 @@ void getCheckFuncInfo(cfCheckFuncInfo_t *checkFuncInfo)
     checkFuncInfo->averageDeltaTimeUs = checkFuncMovingSumDeltaTimeUs / TASK_STATS_MOVING_SUM_COUNT;
 }
 
-void getTaskInfo(taskId_e taskId, taskInfo_t * taskInfo)
+void getTaskInfo(taskId_e taskId, taskInfo_t *taskInfo)
 {
-    taskInfo->isEnabled = queueContains(getTask(taskId));
-    taskInfo->desiredPeriodUs = getTask(taskId)->attribute->desiredPeriodUs;
-    taskInfo->staticPriority = getTask(taskId)->attribute->staticPriority;
-    taskInfo->taskName = getTask(taskId)->attribute->taskName;
-    taskInfo->subTaskName = getTask(taskId)->attribute->subTaskName;
-    taskInfo->maxExecutionTimeUs = getTask(taskId)->maxExecutionTimeUs;
-    taskInfo->totalExecutionTimeUs = getTask(taskId)->totalExecutionTimeUs;
-    taskInfo->averageExecutionTime10thUs = getTask(taskId)->movingSumExecutionTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
-    taskInfo->averageDeltaTime10thUs = getTask(taskId)->movingSumDeltaTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
-    taskInfo->latestDeltaTimeUs = getTask(taskId)->taskLatestDeltaTimeUs;
-    taskInfo->movingAverageCycleTimeUs = getTask(taskId)->movingAverageCycleTimeUs;
+    memset(taskInfo, 0, sizeof(*taskInfo));
+
+    const task_t *task = resolveTask(taskId);
+
+    if (!task) return;
+
+    taskInfo->taskName = task->attribute->taskName;
+    taskInfo->subTaskName = task->attribute->subTaskName;
+    taskInfo->desiredPeriodUs = task->attribute->desiredPeriodUs;
+    taskInfo->staticPriority = task->attribute->staticPriority;
+
+    // A disabled task is not registered with PIF at all, so it has no
+    // statistics to report and everything past here stays zero.
+    PifTask *p_task = task->p_task;
+    taskInfo->isEnabled = (p_task != NULL);
+    if (!p_task) return;
+
+    taskInfo->maxExecutionTimeUs = p_task->_max_execution_time;
+    taskInfo->totalExecutionTimeUs = p_task->_total_execution_time;
+    taskInfo->latestDeltaTimeUs = (timeDelta_t)p_task->_delta_time;
+    taskInfo->averageExecutionTime10thUs = averageOrZero(pifTask_GetAverageExecuteTime(p_task)) * 10;
+    taskInfo->averageDeltaTime10thUs = averageOrZero(pifTask_GetAverageDeltaTime(p_task)) * 10;
 #if defined(USE_LATE_TASK_STATISTICS)
-    taskInfo->lateCount = getTask(taskId)->lateCount;
-    taskInfo->runCount = getTask(taskId)->runCount;
-    taskInfo->execTime = getTask(taskId)->execTime;
+    taskInfo->maxDelayUs = p_task->_max_delay;
 #endif
 }
 
 void rescheduleTask(taskId_e taskId, timeDelta_t newPeriodUs)
 {
-    task_t *task;
+    task_t *task = resolveTask(taskId);
 
-    if (taskId == TASK_SELF) {
-        task = currentTask;
-    } else if (taskId < TASK_COUNT) {
-        task = getTask(taskId);
-    } else {
-        return;
+    if (!task) return;
+
+    // Limit delay to 100us (10 kHz) to prevent scheduler clogging
+    if (newPeriodUs < SCHEDULER_DELAY_LIMIT) {
+        newPeriodUs = SCHEDULER_DELAY_LIMIT;
     }
-    task->attribute->desiredPeriodUs = MAX(SCHEDULER_DELAY_LIMIT, newPeriodUs);  // Limit delay to 100us (10 kHz) to prevent scheduler clogging
+    task->attribute->desiredPeriodUs = newPeriodUs;
 
-    // Catch the case where the gyro loop is adjusted
-    if (taskId == TASK_GYRO) {
-        desiredPeriodCycles = (int32_t)clockMicrosToCycles((uint32_t)getTask(TASK_GYRO)->attribute->desiredPeriodUs);
+    // TASK_FILTER and TASK_PID are TM_EXTERNAL: they have no period to change,
+    // they run when TASK_GYRO releases them. desiredPeriodUs above is still
+    // what the CLI reports them against.
+    if (task->p_task && (task->attribute->pifTaskMode != TM_EXTERNAL)) {
+        pifTask_ChangePeriod(task->p_task, (uint32_t)newPeriodUs);
     }
 }
 
 void setTaskEnabled(taskId_e taskId, bool enabled)
 {
-    if (taskId == TASK_SELF || taskId < TASK_COUNT) {
-        task_t *task = taskId == TASK_SELF ? currentTask : getTask(taskId);
-        if (enabled && task->attribute->taskFunc) {
-            queueAdd(task);
-        } else {
-            queueRemove(task);
+    task_t *task = resolveTask(taskId);
+
+    if (!task) return;
+
+    if (enabled) {
+        // Nothing to run, or running already. Re-adding would take a second
+        // PifTask slot and leave the first one orphaned in the ring.
+        if (!task->attribute->taskFunc || task->p_task) return;
+
+        const taskId_e id = (taskId_e)(task - tasks);
+
+        task->p_task = pifTaskManager_Add(PIF_ID_USER(id), task->attribute->pifTaskMode,
+                taskPeriodUs(task), task->attribute->taskFunc, task, TRUE);
+        if (!task->p_task) {
+            // Out of PifTask slots, or PIF never came up. Raise PIF_TASK_SIZE in
+            // pif_linker.h if it is the former; either way the task simply never
+            // runs and the CLI reports it as disabled.
+            return;
         }
+
+        task->p_task->name = task->attribute->taskName;
+        task->p_task->max_skip = maxSkipForTask(id, task->attribute->staticPriority);
+    } else if (task->p_task) {
+        // PIF has no pause that covers every mode: a trigger releases a task
+        // whether or not it is paused, and TASK_FILTER, TASK_PID, TASK_RX and
+        // TASK_OSD are all released by trigger. Taking the task off the ring is
+        // the only disable that holds for all of them, and it shortens the ring
+        // for the tasks that are left. The cost is that a task switched off and
+        // on again starts its statistics from zero.
+        pifTaskManager_Remove(task->p_task);
+        task->p_task = NULL;
     }
 }
 
 timeDelta_t getTaskDeltaTimeUs(taskId_e taskId)
 {
-    if (taskId == TASK_SELF) {
-        return currentTask->taskLatestDeltaTimeUs;
-    } else if (taskId < TASK_COUNT) {
-        return getTask(taskId)->taskLatestDeltaTimeUs;
-    } else {
-        return 0;
-    }
+    const task_t *task = resolveTask(taskId);
+
+    return (task && task->p_task) ? (timeDelta_t)task->p_task->_delta_time : 0;
 }
 
-// Called by tasks executing what are known to be short states
-void schedulerIgnoreTaskStateTime()
-{
-    ignoreCurrentTaskExecRate = true;
-    ignoreCurrentTaskExecTime = true;
-}
-
-// Called by tasks with state machines to only count one state as determining rate
-void schedulerIgnoreTaskExecRate()
-{
-    ignoreCurrentTaskExecRate = true;
-}
-
-// Called by tasks without state machines executing in what is known to be a shorter time than peak
+// Called by a task whose current run is not representative: a state machine in
+// one of its short states, or a run that bailed out early. It absorbed
+// schedulerIgnoreTaskStateTime(), which said the same thing once the rate half
+// of that name went with schedulerIgnoreTaskExecRate().
 void schedulerIgnoreTaskExecTime()
 {
-    ignoreCurrentTaskExecTime = true;
+    PifTask *p_task = pifTaskManager_CurrentTask();
+
+    if (!p_task) return;
+
+    // Keep this run out of the block time, which is what decides whether the
+    // task may start before the next gyro release. The execution time
+    // statistics still take it: PIF has no way to leave a run out of those, and
+    // a peak the CLI hides is a peak nobody fixes.
+    pifTask_IgnoreBlockTime(p_task);
+
+    ignoreExecTimeTask = p_task;
+    ignoreExecTimeAt = p_task->_last_execute_time;
 }
 
 bool schedulerGetIgnoreTaskExecTime()
 {
-    return ignoreCurrentTaskExecTime;
+    PifTask *p_task = pifTaskManager_CurrentTask();
+
+    return p_task && (ignoreExecTimeTask == p_task) && (ignoreExecTimeAt == p_task->_last_execute_time);
 }
 
 void schedulerResetTaskStatistics(taskId_e taskId)
 {
-    if (taskId == TASK_SELF) {
-        currentTask->anticipatedExecutionTime = 0;
-        currentTask->movingSumDeltaTime10thUs = 0;
-        currentTask->totalExecutionTimeUs = 0;
-        currentTask->maxExecutionTimeUs = 0;
-    } else if (taskId < TASK_COUNT) {
-        getTask(taskId)->anticipatedExecutionTime = 0;
-        getTask(taskId)->movingSumDeltaTime10thUs = 0;
-        getTask(taskId)->totalExecutionTimeUs = 0;
-        getTask(taskId)->maxExecutionTimeUs = 0;
+    task_t *task = resolveTask(taskId);
+
+    if (!task) return;
+
+    task->anticipatedExecutionTime = 0;
+    if (task->p_task) {
+        pifTask_ResetStatistics(task->p_task);
     }
 }
 
 void schedulerResetTaskMaxExecutionTime(taskId_e taskId)
 {
-    if (taskId == TASK_SELF) {
-        currentTask->maxExecutionTimeUs = 0;
-    } else if (taskId < TASK_COUNT) {
-        task_t *task = getTask(taskId);
-        task->maxExecutionTimeUs = 0;
-#if defined(USE_LATE_TASK_STATISTICS)
-        task->lateCount = 0;
-        task->runCount = 0;
-#endif
-    }
+    const task_t *task = resolveTask(taskId);
+
+    if (!task || !task->p_task) return;
+
+    pifTask_ResetMaxExecutionTime(task->p_task);
+    // The moving window forgets an outlier on its own, but until it does, a
+    // maximum left over from a one off long run keeps the task from being
+    // started before a gyro release. Clearing the max asked for here covers
+    // that too.
+    pifTask_ResetMaxBlockTime(task->p_task);
 }
 
 void schedulerResetCheckFunctionMaxExecutionTime(void)
@@ -330,400 +392,60 @@ void schedulerResetCheckFunctionMaxExecutionTime(void)
 
 void schedulerInit(void)
 {
-    queueClear();
-    queueAdd(getTask(TASK_SYSTEM));
+    checkTaskCount = 0;
+    ignoreExecTimeTask = NULL;
 
-    schedLoopStartMinCycles = clockMicrosToCycles(SCHED_START_LOOP_MIN_US);
-    schedLoopStartMaxCycles = clockMicrosToCycles(SCHED_START_LOOP_MAX_US);
-    schedLoopStartCycles = schedLoopStartMinCycles;
-    schedLoopStartDeltaDownCycles = clockMicrosToCycles(1) / SCHED_START_LOOP_DOWN_STEP;
-    schedLoopStartDeltaUpCycles = clockMicrosToCycles(1) / SCHED_START_LOOP_UP_STEP;
+    checkFuncMaxExecutionTimeUs = 0;
+    checkFuncTotalExecutionTimeUs = 0;
+    checkFuncMovingSumExecutionTimeUs = 0;
+    checkFuncMovingSumDeltaTimeUs = 0;
 
-    taskGuardMinCycles = clockMicrosToCycles(TASK_GUARD_MARGIN_MIN_US);
-    taskGuardMaxCycles = clockMicrosToCycles(TASK_GUARD_MARGIN_MAX_US);
-    taskGuardCycles = taskGuardMinCycles;
-    taskGuardDeltaDownCycles = clockMicrosToCycles(1) / TASK_GUARD_MARGIN_DOWN_STEP;
-    taskGuardDeltaUpCycles = clockMicrosToCycles(1) / TASK_GUARD_MARGIN_UP_STEP;
-
-    desiredPeriodCycles = (int32_t)clockMicrosToCycles((uint32_t)getTask(TASK_GYRO)->attribute->desiredPeriodUs);
-
-    lastTargetCycles = getCycleCounter();
-
-#if defined(USE_LATE_TASK_STATISTICS)
-    nextTimingCycles = lastTargetCycles;
-#endif
+    // Nothing below may touch PIF if it never came up: pifTaskManager_Add()
+    // would write to an object array that was never allocated, and
+    // pifTaskManager_SetIdle() would call a clock callback that is still NULL.
+    // Every task then stays unregistered, is reported as disabled, and never
+    // runs.
+    if (!pifLinker_IsReady()) return;
 
     for (taskId_e taskId = 0; taskId < TASK_COUNT; taskId++) {
-        schedulerResetTaskStatistics(taskId);
-    }
-}
+        task_t *task = getTask(taskId);
 
-static timeDelta_t taskNextStateTime;
+        task->anticipatedExecutionTime = 0;
+        if (task->attribute->checkFunc) {
+            checkTaskIds[checkTaskCount++] = taskId;
+        }
+    }
+
+    // The check functions of the event driven tasks, run on a pass that had
+    // nothing else to do.
+    pifTaskManager_SetIdle(schedulerIdle, 0);
+
+    setTaskEnabled(TASK_SYSTEM, true);
+}
 
 FAST_CODE void schedulerSetNextStateTime(timeDelta_t nextStateTime)
 {
-    taskNextStateTime = nextStateTime;
+    PifTask *p_task = pifTaskManager_CurrentTask();
+
+    if (!p_task) return;
+
+    // PIF judges the next run by this instead of by the longest run it has
+    // measured, which is what a state machine whose states differ by an order
+    // of magnitude needs: without it the shortest state is refused whenever
+    // there is no room for the longest one.
+    pifTask_SetNextBlockTime(p_task, (nextStateTime > 0) ? (uint32_t)nextStateTime : 0);
+
+    // PIF consumes the declaration at the next dispatch, so the caller could
+    // not read it back. Keeping a copy is what lets a state machine carry its
+    // own per state estimate from one run to the next.
+    ((task_t *)p_task->_p_client)->anticipatedExecutionTime = (timeUs_t)nextStateTime;
 }
 
 FAST_CODE timeDelta_t schedulerGetNextStateTime()
 {
-    return currentTask->anticipatedExecutionTime >> TASK_EXEC_TIME_SHIFT;
-}
+    PifTask *p_task = pifTaskManager_CurrentTask();
 
-FAST_CODE timeUs_t schedulerExecuteTask(task_t *selectedTask, timeUs_t currentTimeUs)
-{
-    timeUs_t taskExecutionTimeUs = 0;
-
-    if (selectedTask) {
-        currentTask = selectedTask;
-        ignoreCurrentTaskExecRate = false;
-        ignoreCurrentTaskExecTime = false;
-        taskNextStateTime = -1;
-        float period = currentTimeUs - selectedTask->lastExecutedAtUs;
-        selectedTask->lastExecutedAtUs = currentTimeUs;
-        selectedTask->lastDesiredAt += selectedTask->attribute->desiredPeriodUs;
-        selectedTask->dynamicPriority = 0;
-
-        // Execute task
-        const timeUs_t currentTimeBeforeTaskCallUs = micros();
-        selectedTask->attribute->taskFunc(currentTimeBeforeTaskCallUs);
-        taskExecutionTimeUs = micros() - currentTimeBeforeTaskCallUs;
-        taskTotalExecutionTime += taskExecutionTimeUs;
-        selectedTask->movingSumExecutionTime10thUs += (taskExecutionTimeUs * 10) - selectedTask->movingSumExecutionTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
-        if (!ignoreCurrentTaskExecRate) {
-            // Record task execution rate and max execution time
-            selectedTask->taskLatestDeltaTimeUs = cmpTimeUs(currentTimeUs, selectedTask->lastStatsAtUs);
-            selectedTask->movingSumDeltaTime10thUs += (selectedTask->taskLatestDeltaTimeUs * 10) - selectedTask->movingSumDeltaTime10thUs / TASK_STATS_MOVING_SUM_COUNT;
-            selectedTask->lastStatsAtUs = currentTimeUs;
-        }
-
-        // Update estimate of expected task duration
-        if (taskNextStateTime != -1) {
-            selectedTask->anticipatedExecutionTime = taskNextStateTime << TASK_EXEC_TIME_SHIFT;
-        } else if (!ignoreCurrentTaskExecTime) {
-            if (taskExecutionTimeUs > (selectedTask->anticipatedExecutionTime >> TASK_EXEC_TIME_SHIFT)) {
-                selectedTask->anticipatedExecutionTime = taskExecutionTimeUs << TASK_EXEC_TIME_SHIFT;
-            } else if (selectedTask->anticipatedExecutionTime > 1) {
-                // Slowly decay the max time
-                selectedTask->anticipatedExecutionTime--;
-            }
-        }
-
-        if (!ignoreCurrentTaskExecTime) {
-            selectedTask->maxExecutionTimeUs = MAX(selectedTask->maxExecutionTimeUs, taskExecutionTimeUs);
-        }
-
-        selectedTask->totalExecutionTimeUs += taskExecutionTimeUs;   // time consumed by scheduler + task
-        selectedTask->movingAverageCycleTimeUs += 0.05f * (period - selectedTask->movingAverageCycleTimeUs);
-#if defined(USE_LATE_TASK_STATISTICS)
-        selectedTask->runCount++;
-#endif
-    }
-
-    return taskExecutionTimeUs;
-}
-
-#if defined(UNIT_TEST)
-task_t *unittest_scheduler_selectedTask;
-uint8_t unittest_scheduler_selectedTaskDynamicPriority;
-
-static void readSchedulerLocals(task_t *selectedTask, uint8_t selectedTaskDynamicPriority)
-{
-    unittest_scheduler_selectedTask = selectedTask;
-    unittest_scheduler_selectedTaskDynamicPriority = selectedTaskDynamicPriority;
-}
-#endif
-
-FAST_CODE void scheduler(void)
-{
-    static uint32_t checkCycles = 0;
-    static uint32_t scheduleCount = 0;
-#if !defined(UNIT_TEST)
-    const timeUs_t schedulerStartTimeUs = micros();
-#endif
-    timeUs_t currentTimeUs;
-    uint32_t nowCycles;
-    timeUs_t taskExecutionTimeUs = 0;
-    task_t *selectedTask = NULL;
-    uint16_t selectedTaskDynamicPriority = 0;
-    uint32_t nextTargetCycles = 0;
-    int32_t schedLoopRemainingCycles;
-
-#if defined(UNIT_TEST)
-    if (nextTargetCycles == 0) {
-        lastTargetCycles = getCycleCounter();
-        nextTargetCycles = lastTargetCycles + desiredPeriodCycles;
-    }
-#endif
-
-    if (gyroEnabled) {
-        // Realtime gyro/filtering/PID tasks get complete priority
-        task_t *gyroTask = getTask(TASK_GYRO);
-        nowCycles = getCycleCounter();
-#if defined(UNIT_TEST)
-        lastTargetCycles = clockMicrosToCycles(gyroTask->lastExecutedAtUs);
-#endif
-        nextTargetCycles = lastTargetCycles + desiredPeriodCycles;
-        schedLoopRemainingCycles = cmpTimeCycles(nextTargetCycles, nowCycles);
-
-        if (schedLoopRemainingCycles < -desiredPeriodCycles) {
-            /* A task has so grossly overrun that at entire gyro cycle has been skipped
-             * This is most likely to occur when connected to the configurator via USB as the serial
-             * task is non-deterministic
-             * Recover as best we can, advancing scheduling by a whole number of cycles
-             */
-            nextTargetCycles += desiredPeriodCycles * (1 + (schedLoopRemainingCycles / -desiredPeriodCycles));
-            schedLoopRemainingCycles = cmpTimeCycles(nextTargetCycles, nowCycles);
-        }
-
-        // Tune out the time lost between completing the last task execution and re-entering the scheduler
-        if ((schedLoopRemainingCycles < schedLoopStartMinCycles) &&
-            (schedLoopStartCycles < schedLoopStartMaxCycles)) {
-            schedLoopStartCycles += schedLoopStartDeltaUpCycles;
-        }
-
-        // Once close to the timing boundary, poll for it's arrival
-        if (schedLoopRemainingCycles < schedLoopStartCycles) {
-            if (schedLoopStartCycles > schedLoopStartMinCycles) {
-                schedLoopStartCycles -= schedLoopStartDeltaDownCycles;
-            }
-#if !defined(UNIT_TEST)
-            while (schedLoopRemainingCycles > 0) {
-                nowCycles = getCycleCounter();
-                schedLoopRemainingCycles = cmpTimeCycles(nextTargetCycles, nowCycles);
-            }
-            DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 0, clockCyclesTo10thMicros(cmpTimeCycles(nowCycles, lastTargetCycles)));
-#endif
-            currentTimeUs = micros();
-            taskExecutionTimeUs += schedulerExecuteTask(gyroTask, currentTimeUs);
-
-            if (gyroFilterReady()) {
-                taskExecutionTimeUs += schedulerExecuteTask(getTask(TASK_FILTER), currentTimeUs);
-            }
-            if (pidLoopReady()) {
-                taskExecutionTimeUs += schedulerExecuteTask(getTask(TASK_PID), currentTimeUs);
-            }
-
-            // Check for incoming RX data. Don't do this in the checker as that is called repeatedly within
-            // a given gyro loop, and ELRS takes a long time to process this and so can only be safely processed
-            // before the checkers
-            rxFrameCheck(currentTimeUs, cmpTimeUs(currentTimeUs, getTask(TASK_RX)->lastExecutedAtUs));
-
-            // Check for failsafe conditions without reliance on the RX task being well behaved
-            if (cmp32(millis(), lastFailsafeCheckMs) > PERIOD_RXDATA_FAILURE) {
-                // This is very low cost taking less that 4us every 10ms
-                failsafeCheckDataFailurePeriod();
-                failsafeUpdateState();
-                lastFailsafeCheckMs = millis();
-            }
-
-#if defined(USE_LATE_TASK_STATISTICS)
-            // % CPU busy
-            DEBUG_SET(DEBUG_TIMING_ACCURACY, 0, getAverageSystemLoadPercent());
-
-            if (cmpTimeCycles(nextTimingCycles, nowCycles) < 0) {
-                nextTimingCycles += clockMicrosToCycles(1000000);
-
-                // Tasks late in last second
-                DEBUG_SET(DEBUG_TIMING_ACCURACY, 1, lateTaskCount);
-                // Total lateness in last second in us
-                DEBUG_SET(DEBUG_TIMING_ACCURACY, 2, clockCyclesTo10thMicros(lateTaskTotal));
-                // Total tasks run in last second
-                DEBUG_SET(DEBUG_TIMING_ACCURACY, 3, taskCount);
-
-                lateTaskCount = 0;
-                lateTaskTotal = 0;
-                taskCount = 0;
-            }
-#endif
-            lastTargetCycles = nextTargetCycles;
-
-#ifdef USE_GYRO_EXTI
-            gyroDev_t *gyro = gyroActiveDev();
-
-            // Bring the scheduler into lock with the gyro
-            if (gyro->gyroModeSPI != GYRO_EXTI_NO_INT) {
-                // Track the actual gyro rate over given number of cycle times and set the expected timebase
-                static uint32_t terminalGyroRateCount = 0;
-                static int32_t sampleRateStartCycles;
-
-                if ((terminalGyroRateCount == 0)) {
-                    terminalGyroRateCount = gyro->detectedEXTI + GYRO_RATE_COUNT;
-                    sampleRateStartCycles = nowCycles;
-                }
-
-                if (gyro->detectedEXTI >= terminalGyroRateCount) {
-                    // Calculate the number of clock cycles on average between gyro interrupts
-                    uint32_t sampleCycles = nowCycles - sampleRateStartCycles;
-                    desiredPeriodCycles = sampleCycles / GYRO_RATE_COUNT;
-                    sampleRateStartCycles = nowCycles;
-                    terminalGyroRateCount += GYRO_RATE_COUNT;
-                }
-
-                // Track the actual gyro rate over given number of cycle times and remove skew
-                static uint32_t terminalGyroLockCount = 0;
-                static int32_t accGyroSkew = 0;
-
-                int32_t gyroSkew = cmpTimeCycles(nextTargetCycles, gyro->gyroSyncEXTI) % desiredPeriodCycles;
-                if (gyroSkew > (desiredPeriodCycles / 2)) {
-                    gyroSkew -= desiredPeriodCycles;
-                }
-
-                accGyroSkew += gyroSkew;
-
-                if ((terminalGyroLockCount == 0)) {
-                    terminalGyroLockCount = gyro->detectedEXTI + GYRO_LOCK_COUNT;
-                }
-
-                if (gyro->detectedEXTI >= terminalGyroLockCount) {
-                    terminalGyroLockCount += GYRO_LOCK_COUNT;
-
-                    // Move the desired start time of the gyroTask
-                    lastTargetCycles -= (accGyroSkew/GYRO_LOCK_COUNT);
-                    DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 3, clockCyclesTo10thMicros(accGyroSkew/GYRO_LOCK_COUNT));
-                    accGyroSkew = 0;
-                }
-            }
-#endif
-       }
-    }
-
-    nowCycles = getCycleCounter();
-    schedLoopRemainingCycles = cmpTimeCycles(nextTargetCycles, nowCycles);
-
-    if (!gyroEnabled || (schedLoopRemainingCycles > (int32_t)clockMicrosToCycles(CHECK_GUARD_MARGIN_US))) {
-        currentTimeUs = micros();
-
-        // Update task dynamic priorities
-        for (task_t *task = queueFirst(); task != NULL; task = queueNext()) {
-            if (task->attribute->staticPriority != TASK_PRIORITY_REALTIME) {
-                // Task has checkFunc - event driven
-                if (task->attribute->checkFunc) {
-                    // Increase priority for event driven tasks
-                    if (task->dynamicPriority > 0) {
-                        task->taskAgePeriods = 1 + (cmpTimeUs(currentTimeUs, task->lastSignaledAtUs) / task->attribute->desiredPeriodUs);
-                        task->dynamicPriority = 1 + task->attribute->staticPriority * task->taskAgePeriods;
-                    } else if (task->attribute->checkFunc(currentTimeUs, cmpTimeUs(currentTimeUs, task->lastExecutedAtUs))) {
-                        const uint32_t checkFuncExecutionTimeUs = cmpTimeUs(micros(), currentTimeUs);
-                        checkFuncMovingSumExecutionTimeUs += checkFuncExecutionTimeUs - checkFuncMovingSumExecutionTimeUs / TASK_STATS_MOVING_SUM_COUNT;
-                        checkFuncMovingSumDeltaTimeUs += task->taskLatestDeltaTimeUs - checkFuncMovingSumDeltaTimeUs / TASK_STATS_MOVING_SUM_COUNT;
-                        checkFuncTotalExecutionTimeUs += checkFuncExecutionTimeUs;   // time consumed by scheduler + task
-                        checkFuncMaxExecutionTimeUs = MAX(checkFuncMaxExecutionTimeUs, checkFuncExecutionTimeUs);
-                        task->lastSignaledAtUs = currentTimeUs;
-                        task->taskAgePeriods = 1;
-                        task->dynamicPriority = 1 + task->attribute->staticPriority;
-                    } else {
-                        task->taskAgePeriods = 0;
-                    }
-                } else {
-                    // Task is time-driven, dynamicPriority is last execution age (measured in desiredPeriods)
-                    // Task age is calculated from last execution
-                    task->taskAgePeriods = (cmpTimeUs(currentTimeUs, task->lastExecutedAtUs) / task->attribute->desiredPeriodUs);
-                    if (task->taskAgePeriods > 0) {
-                        task->dynamicPriority = 1 + task->attribute->staticPriority * task->taskAgePeriods;
-                    }
-                }
-
-                if (task->dynamicPriority > selectedTaskDynamicPriority) {
-                    timeDelta_t taskRequiredTimeUs = task->anticipatedExecutionTime >> TASK_EXEC_TIME_SHIFT;
-                    int32_t taskRequiredTimeCycles = (int32_t)clockMicrosToCycles((uint32_t)taskRequiredTimeUs);
-                    // Allow a little extra time
-                    taskRequiredTimeCycles += checkCycles + taskGuardCycles;
-
-                    // If there's no time to run the task, discount it from prioritisation unless aged sufficiently
-                    // Don't block the SERIAL task.
-                    if ((taskRequiredTimeCycles < schedLoopRemainingCycles) ||
-                        ((scheduleCount & SCHED_TASK_DEFER_MASK) == 0) ||
-                        ((task - tasks) == TASK_SERIAL)) {
-                        selectedTaskDynamicPriority = task->dynamicPriority;
-                        selectedTask = task;
-                    }
-                }
-            }
-
-        }
-
-        // The number of cycles taken to run the checkers is quite consistent with some higher spikes, but
-        // that doesn't defeat its use
-        checkCycles = cmpTimeCycles(getCycleCounter(), nowCycles);
-
-        if (selectedTask) {
-            // Recheck the available time as checkCycles is only approximate
-            timeDelta_t taskRequiredTimeUs = selectedTask->anticipatedExecutionTime >> TASK_EXEC_TIME_SHIFT;
-#if defined(USE_LATE_TASK_STATISTICS)
-            selectedTask->execTime = taskRequiredTimeUs;
-#endif
-            int32_t taskRequiredTimeCycles = (int32_t)clockMicrosToCycles((uint32_t)taskRequiredTimeUs);
-
-            nowCycles = getCycleCounter();
-            schedLoopRemainingCycles = cmpTimeCycles(nextTargetCycles, nowCycles);
-
-            // Allow a little extra time
-            taskRequiredTimeCycles += taskGuardCycles;
-
-            if (!gyroEnabled || (taskRequiredTimeCycles < schedLoopRemainingCycles)) {
-                uint32_t antipatedEndCycles = nowCycles + taskRequiredTimeCycles;
-                taskExecutionTimeUs += schedulerExecuteTask(selectedTask, currentTimeUs);
-                nowCycles = getCycleCounter();
-                int32_t cyclesOverdue = cmpTimeCycles(nowCycles, antipatedEndCycles);
-
-#if defined(USE_LATE_TASK_STATISTICS)
-                if (cyclesOverdue > 0) {
-                    if ((currentTask - tasks) != TASK_SERIAL) {
-                        DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 1, currentTask - tasks);
-                        DEBUG_SET(DEBUG_SCHEDULER_DETERMINISM, 2, clockCyclesTo10thMicros(cyclesOverdue));
-                        currentTask->lateCount++;
-                        lateTaskCount++;
-                        lateTaskTotal += cyclesOverdue;
-                    }
-                }
-#endif  // USE_LATE_TASK_STATISTICS
-
-                if ((currentTask - tasks) == TASK_RX) {
-                    skippedRxAttempts = 0;
-                }
-#ifdef USE_OSD
-                else if ((currentTask - tasks) == TASK_OSD) {
-                    skippedOSDAttempts = 0;
-                }
-#endif
-
-                if ((cyclesOverdue > 0) || (-cyclesOverdue < taskGuardMinCycles)) {
-                    if (taskGuardCycles < taskGuardMaxCycles) {
-                        taskGuardCycles += taskGuardDeltaUpCycles;
-                    }
-                } else if (taskGuardCycles > taskGuardMinCycles) {
-                    taskGuardCycles -= taskGuardDeltaDownCycles;
-                }
-#if defined(USE_LATE_TASK_STATISTICS)
-                taskCount++;
-#endif  // USE_LATE_TASK_STATISTICS
-            } else if ((selectedTask->taskAgePeriods > TASK_AGE_EXPEDITE_COUNT) ||
-#ifdef USE_OSD
-                       (((selectedTask - tasks) == TASK_OSD) && (TASK_AGE_EXPEDITE_OSD != 0) && (++skippedOSDAttempts > TASK_AGE_EXPEDITE_OSD)) ||
-#endif
-                       (((selectedTask - tasks) == TASK_RX) && (TASK_AGE_EXPEDITE_RX != 0) && (++skippedRxAttempts > TASK_AGE_EXPEDITE_RX))) {
-                // If a task has been unable to run, then reduce it's recorded estimated run time to ensure
-                // it's ultimate scheduling
-                selectedTask->anticipatedExecutionTime *= TASK_AGE_EXPEDITE_SCALE;
-            }
-        }
-    }
-
-#if !defined(UNIT_TEST)
-    DEBUG_SET(DEBUG_SCHEDULER, 2, micros() - schedulerStartTimeUs - taskExecutionTimeUs); // time spent in scheduler
-#endif
-
-#if defined(UNIT_TEST)
-    readSchedulerLocals(selectedTask, selectedTaskDynamicPriority);
-#endif
-
-    scheduleCount++;
-}
-
-void schedulerEnableGyro(void)
-{
-    gyroEnabled = true;
+    return p_task ? (timeDelta_t)((task_t *)p_task->_p_client)->anticipatedExecutionTime : 0;
 }
 
 uint16_t getAverageSystemLoadPercent(void)
@@ -731,7 +453,25 @@ uint16_t getAverageSystemLoadPercent(void)
     return averageSystemLoadPercent;
 }
 
-float schedulerGetCycleTimeMultiplier(void)
+uint32_t schedulerGetRealtimeMaxDelayUs(void)
 {
-    return (float)clockMicrosToCycles(getTask(TASK_GYRO)->attribute->desiredPeriodUs) / desiredPeriodCycles;
+    return pif_performance._max_delay;
+}
+
+uint32_t schedulerGetRealtimeMissCount(void)
+{
+    return pif_performance._miss_count;
+}
+
+void schedulerResetRealtime(void)
+{
+    // This clears more than the two numbers above: PIF keeps a margin that a
+    // run has to leave free before the gyro release, and it grows on every late
+    // release but only shrinks one step per release that was on time. A single
+    // long run therefore pins it at its maximum and keeps costing throughput
+    // long after the run that caused it. Resetting it here is the point of the
+    // call, and it is why this belongs on one off events rather than anywhere
+    // that repeats: the margin has to relearn its level from the releases that
+    // follow.
+    pifTaskManager_ResetRealtime();
 }

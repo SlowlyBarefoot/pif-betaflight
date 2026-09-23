@@ -763,24 +763,28 @@ static void updateGpsIndicator(timeUs_t currentTimeUs)
     }
 }
 
-void gpsUpdate(timeUs_t currentTimeUs)
+uint32_t gpsUpdate(PifTask *p_task)
 {
     static gpsState_e gpsStateDurationUs[GPS_STATE_COUNT];
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
     timeUs_t executeTimeUs;
     gpsState_e gpsCurrentState = gpsData.state;
+    // The period of the next release, which PIF takes from the return value.
+    // The two rates below used to be pushed back through rescheduleTask(TASK_SELF);
+    // returning them says the same thing at the point where it is decided.
+    uint32_t nextPeriodUs = 0;
 
     // read out available GPS bytes
     if (gpsPort) {
         while (serialRxBytesWaiting(gpsPort)) {
             if (cmpTimeUs(micros(), currentTimeUs) > GPS_MAX_WAIT_DATA_RX) {
                 // Wait 1ms and come back
-                rescheduleTask(TASK_SELF, TASK_PERIOD_HZ(TASK_GPS_RATE_FAST));
-                return;
+                return TASK_PERIOD_HZ(TASK_GPS_RATE_FAST);
             }
             gpsNewData(serialRead(gpsPort));
         }
         // Restore default task rate
-        rescheduleTask(TASK_SELF, TASK_PERIOD_HZ(TASK_GPS_RATE));
+        nextPeriodUs = TASK_PERIOD_HZ(TASK_GPS_RATE);
    } else if (GPS_update & GPS_MSP_UPDATE) { // GPS data received via MSP
         gpsSetState(GPS_STATE_RECEIVING_DATA);
         onGpsNewData();
@@ -893,6 +897,8 @@ void gpsUpdate(timeUs_t currentTimeUs)
     } else {
         hasFix = false;
     }
+
+    return nextPeriodUs;
 }
 
 static void gpsNewData(uint16_t c)

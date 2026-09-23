@@ -1,11 +1,12 @@
 /*
  * pif_linker.c - the seam between Betaflight and PIF.
  *
- * Holds everything PIF needs from the platform and everything Betaflight
- * needs from PIF, so that no other Betaflight source has to include a PIF
- * header. See pif_linker.h for why that separation matters.
+ * Holds everything PIF needs from the platform: the 1 us clock, the heap, the
+ * 1 ms tick and the loop. What Betaflight needs from PIF is the task manager,
+ * and scheduler/scheduler.c is where that is put to work.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -15,15 +16,6 @@
 
 #include "pif/pif_linker.h"
 
-// core/pif.h defines MIN, MAX and ABS unconditionally. Drop whatever
-// Betaflight brought in above so this file takes PIF's definitions without a
-// redefinition warning; nothing below this point uses the Betaflight ones.
-#undef MIN
-#undef MAX
-#undef ABS
-
-#include "core/pif.h"
-#include "core/pif_task_manager.h"
 #include "core/pif_timer_manager.h"
 
 
@@ -119,6 +111,11 @@ uint8_t pifLinker_Init(void)
 
     s_init_error = (uint8_t)E_SUCCESS;
     return s_init_error;
+}
+
+bool pifLinker_IsReady(void)
+{
+    return s_init_error == (uint8_t)E_SUCCESS;
 }
 
 void pifLinker_sigTimer1ms(void)

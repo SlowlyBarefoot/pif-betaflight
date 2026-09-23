@@ -643,6 +643,16 @@ void dashboardSetPage(pageId_e pageId)
     pageState.pageFlags |= PAGE_STATE_FLAG_FORCE_PAGE_CHANGE;
 }
 
+// PIF entry point for this module's task. dashboardUpdate() keeps the signature
+// it has, because gps.c and dashboard.c itself call it outside the scheduler,
+// so the task table gets this instead of the module changing shape around
+// the scheduler.
+uint32_t dashboardTask(PifTask *p_task)
+{
+    dashboardUpdate(p_task->_last_execute_time);
+    return 0;
+}
+
 void dashboardUpdate(timeUs_t currentTimeUs)
 {
     static uint8_t previousArmedState = 0;

@@ -203,8 +203,6 @@ uint8_t useHottAlarmSoundPeriod (void) { return 0; }
 const uint32_t baudRates[] = {0, 9600, 19200, 38400, 57600, 115200, 230400, 250000, 400000}; // see baudRate_e
 
 uint8_t debugMode;
-int32_t schedLoopStartCycles;
-int32_t taskGuardCycles;
 
 uint32_t micros(void) {return 0;}
 
@@ -252,7 +250,7 @@ void beeper(beeperMode_e) {}
 void beeperSilence(void) {}
 void beeperConfirmationBeeps(uint8_t) {}
 void beeperWarningBeeps(uint8_t) {}
-void beeperUpdate(timeUs_t) {}
+uint32_t beeperUpdate(PifTask *) { return 0; }
 uint32_t getArmingBeepTimeMicros(void) {return 0;}
 beeperMode_e beeperModeForTableIndex(int) {return BEEPER_SILENCE;}
 uint32_t beeperModeMaskForTableIndex(int idx) {UNUSED(idx); return 0;}
@@ -316,6 +314,8 @@ void getTaskInfo(taskId_e, taskInfo_t *) {}
 void getCheckFuncInfo(cfCheckFuncInfo_t *) {}
 void schedulerResetTaskMaxExecutionTime(taskId_e) {}
 void schedulerResetCheckFunctionMaxExecutionTime(void) {}
+uint32_t schedulerGetRealtimeMaxDelayUs(void) { return 0; }
+uint32_t schedulerGetRealtimeMissCount(void) { return 0; }
 
 const char * const targetName = "UNITTEST";
 const char* const buildDate = "Jan 01 2017";

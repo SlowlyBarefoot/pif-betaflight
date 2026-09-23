@@ -797,6 +797,14 @@ void saveConfigAndNotify(void)
 
     writeEEPROM();
     readEEPROM();
+
+    // The flash write above held the CPU for milliseconds, so the gyro releases
+    // that fell in it were late and the margin PIF keeps in front of them has
+    // been driven up to cover a delay that cannot happen again. Drop it back,
+    // along with the delay and miss figures the write would otherwise leave as
+    // the worst the firmware has ever seen.
+    schedulerResetRealtime();
+
     beeperConfirmationBeeps(1);
 }
 
@@ -848,6 +856,11 @@ void changePidProfile(uint8_t pidProfileIndex)
         initEscEndpoints();
         mixerInitProfile();
     }
+
+    // As in saveConfigAndNotify(): the switch is over, so the margin it pushed
+    // up should not keep holding tasks back. A profile switch can happen in
+    // flight, which is exactly where that cost matters.
+    schedulerResetRealtime();
 
     beeperConfirmationBeeps(pidProfileIndex + 1);
 }

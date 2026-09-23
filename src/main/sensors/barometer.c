@@ -390,7 +390,7 @@ uint32_t baroUpdate(timeUs_t currentTimeUs)
 
     if (busBusy(&baro.dev.dev, NULL)) {
         // If the bus is busy, simply return to have another go later
-        schedulerIgnoreTaskStateTime();
+        schedulerIgnoreTaskExecTime();
         return sleepTime;
     }
 
@@ -458,11 +458,6 @@ uint32_t baroUpdate(timeUs_t currentTimeUs)
 
             sleepTime = baro.dev.ut_delay;
             break;
-    }
-
-    // Where we are using a state machine call schedulerIgnoreTaskExecRate() for all states bar one
-    if (sleepTime != baro.dev.ut_delay) {
-        schedulerIgnoreTaskExecRate();
     }
 
     executeTimeUs = micros() - currentTimeUs;

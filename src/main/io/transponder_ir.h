@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "common/time.h"
 #include "pg/pg.h"
 
@@ -43,7 +46,7 @@ extern const transponderRequirement_t transponderRequirements[TRANSPONDER_PROVID
 
 void transponderInit(void);
 
-void transponderUpdate(timeUs_t currentTimeUs);
+uint32_t transponderUpdate(PifTask *p_task);
 void transponderUpdateData(void);
 void transponderTransmitOnce(void);
 void transponderStartRepeating(void);

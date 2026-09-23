@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "common/color.h"
 #include "common/time.h"
 
@@ -225,7 +228,7 @@ void reevaluateLedConfig(void);
 void ledStripInit(void);
 void ledStripEnable(void);
 void ledStripDisable(void);
-void ledStripUpdate(timeUs_t currentTimeUs);
+uint32_t ledStripUpdate(PifTask *p_task);
 
 bool setModeColor(ledModeIndex_e modeIndex, int modeColorIndex, int colorIndex);
 

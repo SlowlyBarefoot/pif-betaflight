@@ -300,12 +300,14 @@ static void selectNextMotor(void)
 
 // XXX Review ESC sensor under refactored motor handling
 
-void escSensorProcess(timeUs_t currentTimeUs)
+uint32_t escSensorProcess(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     const timeMs_t currentTimeMs = currentTimeUs / 1000;
 
     if (!escSensorPort || !motorIsEnabled()) {
-        return;
+        return 0;
     }
 
     switch (escSensorTriggerState) {
@@ -359,6 +361,7 @@ void escSensorProcess(timeUs_t currentTimeUs)
 
             break;
     }
+    return 0;
 }
 
 int calcEscRpm(int erpm)

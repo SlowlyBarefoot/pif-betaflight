@@ -45,8 +45,10 @@ void dispatchEnable(void)
     dispatchEnabled = true;
 }
 
-void dispatchProcess(uint32_t currentTimeUs)
+uint32_t dispatchProcess(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     for (dispatchEntry_t **p = &head; *p; ) {
         if (cmp32(currentTimeUs, (*p)->delayedUntil) < 0)
             break;
@@ -56,6 +58,7 @@ void dispatchProcess(uint32_t currentTimeUs)
         current->inQue = false;
         (*current->dispatch)(current);
     }
+    return 0;
 }
 
 void dispatchAdd(dispatchEntry_t *entry, int delayUs)

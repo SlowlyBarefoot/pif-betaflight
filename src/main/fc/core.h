@@ -23,6 +23,9 @@
 #include "common/time.h"
 #include "pg/pg.h"
 
+// The three gyro loop tasks are PifEvtTaskLoop functions.
+#include "pif/pif_linker.h"
+
 #if defined(USE_GPS) || defined(USE_MAG)
 extern int16_t magHold;
 #endif
@@ -79,11 +82,11 @@ bool processRx(timeUs_t currentTimeUs);
 void processRxModes(timeUs_t currentTimeUs);
 void updateArmingStatus(void);
 
-void taskGyroSample(timeUs_t currentTimeUs);
+uint32_t taskGyroSample(PifTask *p_task);
 bool gyroFilterReady(void);
 bool pidLoopReady(void);
-void taskFiltering(timeUs_t currentTimeUs);
-void taskMainPidLoop(timeUs_t currentTimeUs);
+uint32_t taskFiltering(PifTask *p_task);
+uint32_t taskMainPidLoop(PifTask *p_task);
 
 bool isFlipOverAfterCrashActive(void);
 int8_t calculateThrottlePercent(void);

@@ -353,7 +353,6 @@ uint32_t compassUpdate(timeUs_t currentTimeUs)
 {
     if (busBusy(&magDev.dev, NULL) || !magDev.read(&magDev, magADCRaw)) {
         // No action was taken as the read has not completed
-        schedulerIgnoreTaskExecRate();
         return 1000; // Wait 1ms between states
     }
 

@@ -4915,7 +4915,7 @@ static void cliTasks(const char *cmdName, char *cmdline)
 #ifndef MINIMAL_CLI
     if (systemConfig()->task_statistics) {
 #if defined(USE_LATE_TASK_STATISTICS)
-        cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms   late    run reqd/us");
+        cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms maxdly/us");
 #else
         cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms");
 #endif
@@ -4936,11 +4936,11 @@ static void cliTasks(const char *cmdName, char *cmdline)
             }
             if (systemConfig()->task_statistics) {
 #if defined(USE_LATE_TASK_STATISTICS)
-                cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d %6d %6d %7d",
+                cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d %9d",
                         taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10,
                         maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
                         taskInfo.totalExecutionTimeUs / 1000,
-                        taskInfo.lateCount, taskInfo.runCount, taskInfo.execTime);
+                        (int)taskInfo.maxDelayUs);
 #else
                 cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d",
                         taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10,
@@ -4960,9 +4960,8 @@ static void cliTasks(const char *cmdName, char *cmdline)
         cliPrintLinef("RX Check Function %19d %7d %25d", checkFuncInfo.maxExecutionTimeUs, checkFuncInfo.averageExecutionTimeUs, checkFuncInfo.totalExecutionTimeUs / 1000);
         cliPrintLinef("Total (excluding SERIAL) %33d.%1d%%", averageLoadSum/10, averageLoadSum%10);
         if (debugMode == DEBUG_SCHEDULER_DETERMINISM) {
-            extern int32_t schedLoopStartCycles, taskGuardCycles;
-
-            cliPrintLinef("Scheduler start cycles %d guard cycles %d", schedLoopStartCycles, taskGuardCycles);
+            cliPrintLinef("Gyro task max delay %dus, missed releases %d",
+                    (int)schedulerGetRealtimeMaxDelayUs(), (int)schedulerGetRealtimeMissCount());
         }
         schedulerResetCheckFunctionMaxExecutionTime();
     }

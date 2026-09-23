@@ -293,6 +293,16 @@ static void rcdeviceProcessDeviceRequest(runcamDeviceRequest_t *request)
     }
 }
 
+// PIF entry point for this module's task. rcdeviceUpdate() keeps the signature
+// it has, because the rcdevice unit test drives it directly,
+// so the task table gets this instead of the module changing shape around
+// the scheduler.
+uint32_t rcdeviceTask(PifTask *p_task)
+{
+    rcdeviceUpdate(p_task->_last_execute_time);
+    return 0;
+}
+
 void rcdeviceUpdate(timeUs_t currentTimeUs)
 {
     rcdeviceReceive(currentTimeUs);

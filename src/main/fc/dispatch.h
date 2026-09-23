@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 struct dispatchEntry_s;
 typedef void dispatchFunc(struct dispatchEntry_s* self);
 
@@ -32,5 +35,5 @@ typedef struct dispatchEntry_s {
 
 bool dispatchIsEnabled(void);
 void dispatchEnable(void);
-void dispatchProcess(uint32_t currentTime);
+uint32_t dispatchProcess(PifTask *p_task);
 void dispatchAdd(dispatchEntry_t *entry, int delayUs);

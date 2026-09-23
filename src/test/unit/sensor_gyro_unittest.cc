@@ -161,6 +161,7 @@ uint8_t detectedSensors[] = { GYRO_NONE, ACC_NONE };
 timeDelta_t getGyroUpdateRate(void) {return gyro.targetLooptime;}
 void sensorsSet(uint32_t) {}
 void schedulerResetTaskStatistics(taskId_e) {}
+void schedulerResetRealtime(void) {}
 int getArmingDisableFlags(void) {return 0;}
 void writeEEPROM(void) {}
 }

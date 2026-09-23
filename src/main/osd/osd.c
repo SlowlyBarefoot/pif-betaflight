@@ -1175,6 +1175,15 @@ bool osdUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
     return (osdState != OSD_STATE_IDLE);
 }
 
+// PIF entry point for TASK_OSD. osdUpdate() keeps the signature it has, because
+// the OSD unit tests drive it directly and a state machine is worth testing
+// without a scheduler attached, so the task table gets this instead.
+uint32_t osdTask(PifTask *p_task)
+{
+    osdUpdate(p_task->_last_execute_time);
+    return 0;
+}
+
 // Called when there is OSD update work to be done
 void osdUpdate(timeUs_t currentTimeUs)
 {
@@ -1188,10 +1197,6 @@ void osdUpdate(timeUs_t currentTimeUs)
     uint8_t osdCurrentElementGroup = 0;
     timeUs_t executeTimeUs;
     osdState_e osdCurrentState = osdState;
-
-    if (osdState != OSD_STATE_UPDATE_CANVAS) {
-        schedulerIgnoreTaskExecRate();
-    }
 
     switch (osdState) {
     case OSD_STATE_INIT:

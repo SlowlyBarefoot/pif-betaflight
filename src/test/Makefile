@@ -282,14 +282,6 @@ rx_sumd_unittest_SRC := \
 		$(USER_DIR)/common/streambuf.c \
 		$(USER_DIR)/rx/sumd.c
 
-scheduler_unittest_SRC := \
-		$(USER_DIR)/scheduler/scheduler.c \
-		$(USER_DIR)/common/crc.c \
-		$(USER_DIR)/common/streambuf.c
-
-scheduler_unittest_DEFINES := \
-		USE_OSD= 
-
 sensor_gyro_unittest_SRC := \
 		$(USER_DIR)/sensors/gyro.c \
 		$(USER_DIR)/sensors/gyro_init.c \
@@ -488,7 +480,14 @@ endif
 # -Wno-c99-extensions
 # -Wno-reorder
 
+# PIF, reached from scheduler.h: core/pif.h for the types, and src/main/pif
+# for the pif_conf.h that core/pif.h includes by that bare name. Mirrors the
+# PIF_DIR of make/pif.mk and is overridable the same way.
+PIF_DIR ?= $(ROOT)/../pif
+
 COMMON_FLAGS = \
+	-I$(PIF_DIR)/include \
+	-I$(USER_DIR)/pif \
 	-g \
 	-Wall \
 	-Wextra \

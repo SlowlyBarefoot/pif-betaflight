@@ -379,8 +379,10 @@ static void beeperGpsStatus(void)
  * Beeper handler function to be called periodically in loop. Updates beeper
  * state via time schedule.
  */
-void beeperUpdate(timeUs_t currentTimeUs)
+uint32_t beeperUpdate(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     // If beeper option from AUX switch has been selected
     if (IS_RC_MODE_ACTIVE(BOXBEEPERON)) {
         beeper(BEEPER_RX_SET);
@@ -392,12 +394,12 @@ void beeperUpdate(timeUs_t currentTimeUs)
 
     // Beeper routine doesn't need to update if there aren't any sounds ongoing
     if (currentBeeperEntry == NULL) {
-        return;
+        return 0;
     }
 
     if (beeperNextToggleTime > currentTimeUs) {
         schedulerIgnoreTaskExecTime();
-        return;
+        return 0;
     }
 
     if (!beeperIsOn) {
@@ -448,6 +450,7 @@ void beeperUpdate(timeUs_t currentTimeUs)
 #endif
     
     beeperProcessCommand(currentTimeUs);
+    return 0;
 }
 
 /*
@@ -527,7 +530,7 @@ void beeper(beeperMode_e mode) {UNUSED(mode);}
 void beeperSilence(void) {}
 void beeperConfirmationBeeps(uint8_t beepCount) {UNUSED(beepCount);}
 void beeperWarningBeeps(uint8_t beepCount) {UNUSED(beepCount);}
-void beeperUpdate(timeUs_t currentTimeUs) {UNUSED(currentTimeUs);}
+uint32_t beeperUpdate(PifTask *p_task) {UNUSED(p_task); return 0;}
 uint32_t getArmingBeepTimeMicros(void) {return 0;}
 beeperMode_e beeperModeForTableIndex(int idx) {UNUSED(idx); return BEEPER_SILENCE;}
 uint32_t beeperModeMaskForTableIndex(int idx) {UNUSED(idx); return 0;}

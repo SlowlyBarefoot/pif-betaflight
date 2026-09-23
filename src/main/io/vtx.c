@@ -237,12 +237,14 @@ static bool vtxProcessStateUpdate(vtxDevice_t *vtxDevice)
     return (bool)memcmp(&vtxSettingsState, &vtxState, sizeof(vtxSettingsConfig_t));
 }
 
-void vtxUpdate(timeUs_t currentTimeUs)
+uint32_t vtxUpdate(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     static uint8_t currentSchedule = 0;
 
     if (cliMode) {
-        return;
+        return 0;
     }
 
     vtxDevice_t *vtxDevice = vtxCommonDevice();
@@ -282,6 +284,7 @@ void vtxUpdate(timeUs_t currentTimeUs)
             vtxCommonProcess(vtxDevice, currentTimeUs);
         }
     }
+    return 0;
 }
 
 #endif

@@ -1,23 +1,36 @@
 /*
  * pif_linker.h - the seam between Betaflight and PIF.
  *
- * Deliberately free of PIF headers. core/pif.h defines MIN, MAX, ABS, BOOL,
- * TRUE and FALSE, and common/maths.h defines MIN, MAX and ABS differently, so
- * a translation unit that pulls in both gets a redefinition and silently
- * changes which one it uses. Betaflight sources include this file; only
- * pif_linker.c includes PIF itself.
+ * Every Betaflight task is a PifTask and its task function is a PifEvtTaskLoop,
+ * so PifTask has to be a type that scheduler.h can name and that the task
+ * functions can take. This header is where PIF enters the Betaflight build; a
+ * source that defines a task function includes it, and scheduler.h includes it
+ * for the two types in task_attribute_t.
+ *
+ * On the macro collision that used to keep PIF out of here: core/pif.h defines
+ * MIN, MAX and ABS, and so does common/maths.h. Both sides are now guarded -
+ * pif.h leaves them alone when they already exist, and maths.h undefines before
+ * defining - so whichever order a translation unit includes them in, the
+ * Betaflight versions win wherever maths.h is in scope. They are the ones that
+ * evaluate their arguments once. A source that uses MIN or MAX must therefore
+ * include common/maths.h, which is what Betaflight already required of it.
  */
 
 #ifndef PIF_LINKER_H
 #define PIF_LINKER_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
-// Number of PifTask slots the task manager is created with. TASK_COUNT in
-// scheduler.h reaches 34 with every feature compiled in, and PIF modules
-// bring tasks of their own, so this leaves room above that. A task that finds
-// no slot is simply not registered - pifTaskManager_Add() returns NULL and
-// says nothing - so the headroom matters more than the few bytes it costs.
+#include "core/pif.h"
+#include "core/pif_task_manager.h"
+
+// Number of PifTask slots the task manager is created with. Every Betaflight
+// task takes one (scheduler.c registers the whole table), TASK_COUNT in
+// scheduler.h reaches 34 with every feature compiled in, and PIF modules bring
+// tasks of their own, so this leaves room above that. A task that finds no slot
+// is simply not registered - pifTaskManager_Add() returns NULL - and shows up
+// as disabled in the CLI, so the headroom matters more than the bytes.
 #define PIF_TASK_SIZE			40
 
 // Number of timer process slots (pifTaskManager_AddTimer). Each
@@ -40,10 +53,11 @@
 //   PIF_TASK_TIMER_SIZE x (8 + sizeof(PifTaskTimer))
 //   PIF_TIMER_1MS_SIZE  x (8 + sizeof(PifTimer)) + 4 bytes per removal slot
 //
-// sizeof(PifTask) is 76 bytes as configured today and grows to 140 once
-// PIF_USE_TASK_STATISTICS and PIF_USE_BLOCK_TIME are turned on in pif_conf.h,
-// which is the case this is sized for: about 6.4 KB at 40 tasks. Enabling
-// those options must not need a second edit here.
+// sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
+// PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take
+// 40 x 152 = 6080 bytes. The timer and PifTimer slots bring the total to around
+// 6.7 KB and leave about 1.5 KB spare. Anything added to PifTask costs 152
+// bytes here per 40 slots, so check this figure when PIF grows a field.
 #define PIF_HEAP_SIZE			8192
 
 // Initialises pif, the task manager and the 1 ms timer manager, in that order.
@@ -56,14 +70,21 @@
 // this returned 0.
 uint8_t pifLinker_Init(void);
 
+// Whether pifLinker_Init() has succeeded, so PIF may be called. Callers that
+// only ever run after a successful init do not need it; scheduler.c does,
+// because schedulerInit() would otherwise register tasks on a task manager
+// that was never created and hand PIF a clock callback it has not got.
+bool pifLinker_IsReady(void);
+
 // 1 ms tick. Called from SysTick_Handler(); advances the pif clock and the
 // 1 ms timer manager. Does nothing until pifLinker_Init() has succeeded.
 void pifLinker_sigTimer1ms(void);
 
-// One pass of the PIF scheduler. Called from run() in main.c, next to
-// Betaflight's scheduler(), so PIF turns over at the same rate. This is what
-// dispatches the work the 1 ms tick only marked as due, and what closes the
-// CPU load window. Does nothing until pifLinker_Init() has succeeded.
+// One pass of the PIF scheduler, called from run() in main.c. Since
+// scheduler.c put every Betaflight task on the task manager, this is the
+// scheduler: it dispatches at most one task, runs the check functions of the
+// event driven tasks when it dispatched none, and closes the CPU load window
+// once a second. Does nothing until pifLinker_Init() has succeeded.
 void pifLinker_Loop(void);
 
 #endif  // PIF_LINKER_H

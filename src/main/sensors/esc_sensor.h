@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "common/time.h"
 
 typedef struct escSensorConfig_s {
@@ -44,7 +47,7 @@ typedef struct {
 #define ESC_BATTERY_AGE_MAX 10
 
 bool escSensorInit(void);
-void escSensorProcess(timeUs_t currentTime);
+uint32_t escSensorProcess(PifTask *p_task);
 
 #define ESC_SENSOR_COMBINED 255
 

@@ -717,8 +717,10 @@ static uint32_t next20hzUpdateAt_1 = 0;
 
 static uint8_t sendCounter = 0;
 
-void taskBstMasterProcess(timeUs_t currentTimeUs)
+uint32_t taskBstMasterProcess(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     if (coreProReady) {
         if (currentTimeUs >= next02hzUpdateAt_1 && !bstWriteBusy()) {
             writeFCModeToBST();
@@ -746,6 +748,7 @@ void taskBstMasterProcess(timeUs_t currentTimeUs)
         systemReset();
     }
     resetBstChecker(currentTimeUs);
+    return 0;
 }
 
 /*************************************************************************************************/

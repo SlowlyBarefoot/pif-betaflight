@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include <stdint.h>
 
 #include "platform.h"
@@ -45,4 +48,4 @@ typedef struct vtxSettingsConfig_s {
 PG_DECLARE(vtxSettingsConfig_t, vtxSettingsConfig);
 
 void vtxInit(void);
-void vtxUpdate(timeUs_t currentTimeUs);
+uint32_t vtxUpdate(PifTask *p_task);

@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "common/time.h"
 #include "pg/pg.h"
 #include "drivers/bus_i2c.h"
@@ -59,6 +62,7 @@ typedef enum {
 
 void dashboardInit(void);
 void dashboardUpdate(timeUs_t currentTimeUs);
+uint32_t dashboardTask(PifTask *p_task);
 
 void dashboardShowFixedPage(pageId_e pageId);
 

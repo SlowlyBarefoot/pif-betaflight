@@ -20,6 +20,9 @@
 
 #include "pg/piniobox.h"
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 void pinioBoxInit(const pinioBoxConfig_t *pinioBoxConfig);
-void pinioBoxUpdate(timeUs_t currentTimeUs);
+uint32_t pinioBoxUpdate(PifTask *p_task);
 void pinioBoxTaskControl(void);

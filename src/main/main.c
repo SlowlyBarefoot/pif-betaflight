@@ -27,8 +27,6 @@
 
 #include "pif/pif_linker.h"
 
-#include "scheduler/scheduler.h"
-
 void run(void);
 
 int main(void)
@@ -43,13 +41,11 @@ int main(void)
 void FAST_CODE run(void)
 {
     while (true) {
-        scheduler();
-
-        // One PIF pass per Betaflight pass. The 1 ms tick only marks work as
-        // due; this is what dispatches it, and what closes the CPU load
-        // window once a second. No PifTask is registered yet, so all it runs
-        // is the 1 ms timer manager's callback, which returns immediately
-        // unless a PifTimer expired.
+        // The scheduler. Every Betaflight task is a PifTask (see
+        // src/main/scheduler/scheduler.c), so one pass of the PIF task manager
+        // dispatches at most one of them, runs the check functions of the
+        // event driven tasks when it dispatched none, and closes the CPU load
+        // window once a second.
         pifLinker_Loop();
 #ifdef SIMULATOR_BUILD
         delayMicroseconds_real(50); // max rate 20kHz

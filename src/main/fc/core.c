@@ -57,6 +57,7 @@
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 #include "fc/stats.h"
+#include "fc/tasks.h"
 
 #include "flight/failsafe.h"
 #include "flight/gps_rescue.h"
@@ -538,6 +539,11 @@ void tryArm(void)
         osdSuppressStats(false);
 #endif
         ENABLE_ARMING_FLAG(ARMED);
+
+        // The gyro delay and miss figures go into the blackbox through
+        // DEBUG_TIMING_ACCURACY, and a log that starts here should carry this
+        // flight's numbers rather than whatever the bench left behind.
+        schedulerResetRealtime();
 
         resetTryingToArm();
 
@@ -1235,14 +1241,70 @@ static FAST_CODE_NOINLINE void subTaskRcCommand(timeUs_t currentTimeUs)
     processRcCommand();
 }
 
-FAST_CODE void taskGyroSample(timeUs_t currentTimeUs)
+// Releases one of the two TM_EXTERNAL tasks through the cut in slot, so that it
+// is dispatched on the very next pass of the task manager, ahead of the ring
+// and ahead of the next gyro release. Does nothing for a task this build has
+// switched off, which has no PifTask at all.
+static FAST_CODE bool releaseCutin(taskId_e taskId)
 {
-    UNUSED(currentTimeUs);
+    PifTask *p_task = getTask(taskId)->p_task;
+
+    if (!p_task) {
+        return false;
+    }
+    pifTask_SetCutinTrigger(p_task);
+    return true;
+}
+
+// TASK_GYRO, the TM_REALTIME task: the one task PIF releases ahead of the whole
+// ring, and the guarantee every other task is measured against.
+FAST_CODE uint32_t taskGyroSample(PifTask *p_task)
+{
+    static timeMs_t lastFailsafeCheckMs = 0;
+
     gyroUpdate();
     if (pidUpdateCounter % activePidLoopDenom == 0) {
         pidUpdateCounter = 0;
     }
     pidUpdateCounter++;
+
+    // Only one task can hold the cut in slot, and TASK_FILTER has to run first
+    // when both are ready, because taskMainPidLoop() reads what taskFiltering()
+    // just produced. So the filters take the slot here and taskFiltering() hands
+    // it on to TASK_PID; at any pid_process_denom above 1 the two are never
+    // ready in the same gyro cycle, so the slot is free for whichever of them
+    // wants it. Either way both are dispatched on the pass right after the one
+    // that released them, and neither is ever picked off the ring.
+    bool cutinTaken = false;
+
+    if (gyroFilterReady()) {
+        cutinTaken = releaseCutin(TASK_FILTER);
+    }
+    if (!cutinTaken && pidLoopReady()) {
+        // Reached at a denominator above 1, and at a denominator of 1 when the
+        // filter task is switched off and has left the slot free.
+        releaseCutin(TASK_PID);
+    }
+
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+    const PifTask *p_rx_task = getTask(TASK_RX)->p_task;
+
+    // Check for incoming RX data. Not left to the RX check function, as that is
+    // called from the idle pass and ELRS takes long enough processing it that it
+    // has to be out of the way before the checkers run.
+    if (p_rx_task) {
+        rxFrameCheck(currentTimeUs, cmpTimeUs(currentTimeUs, p_rx_task->_last_execute_time));
+    }
+
+    // Check for failsafe conditions without reliance on the RX task being well behaved
+    if (cmp32(millis(), lastFailsafeCheckMs) > PERIOD_RXDATA_FAILURE) {
+        // This is very low cost taking less that 4us every 10ms
+        failsafeCheckDataFailurePeriod();
+        failsafeUpdateState();
+        lastFailsafeCheckMs = millis();
+    }
+
+    return 0;
 }
 
 FAST_CODE bool gyroFilterReady(void)
@@ -1262,18 +1324,35 @@ FAST_CODE bool pidLoopReady(void)
     return false;
 }
 
-FAST_CODE void taskFiltering(timeUs_t currentTimeUs)
+FAST_CODE uint32_t taskFiltering(PifTask *p_task)
 {
-    gyroFiltering(currentTimeUs);
+    gyroFiltering(p_task->_last_execute_time);
 
+    // gyroFilterReady() is pidUpdateCounter % denom == 0 and pidLoopReady() is
+    // pidUpdateCounter % denom == denom / 2, so the two are true in the same
+    // gyro cycle at a pid_process_denom of 1 and never at any higher one. This
+    // is therefore the denom 1 case, where TASK_PID could not take the cut in
+    // slot back in taskGyroSample() because this task was holding it. The slot
+    // is free now, so TASK_PID goes through it as well instead of being picked
+    // off the ring behind whatever else happens to be triggered.
+    //
+    // pidUpdateCounter only moves in taskGyroSample(), and the cut in slot is
+    // served before anything else on a pass, so nothing has run between the
+    // gyro and here: pidLoopReady() still answers for the same gyro cycle.
+    if (pidLoopReady()) {
+        releaseCutin(TASK_PID);
+    }
+
+    return 0;
 }
 
 // Function for loop trigger
-FAST_CODE void taskMainPidLoop(timeUs_t currentTimeUs)
+FAST_CODE uint32_t taskMainPidLoop(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
 
 #if defined(SIMULATOR_BUILD) && defined(SIMULATOR_GYROPID_SYNC)
-    if (lockMainPID() != 0) return;
+    if (lockMainPID() != 0) return 0;
 #endif
 
     // DEBUG_PIDLOOP, timings for:
@@ -1290,6 +1369,7 @@ FAST_CODE void taskMainPidLoop(timeUs_t currentTimeUs)
 
     DEBUG_SET(DEBUG_CYCLETIME, 0, getTaskDeltaTimeUs(TASK_SELF));
     DEBUG_SET(DEBUG_CYCLETIME, 1, getAverageSystemLoadPercent());
+    return 0;
 }
 
 bool isFlipOverAfterCrashActive(void)

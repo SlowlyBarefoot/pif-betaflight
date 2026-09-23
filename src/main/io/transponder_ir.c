@@ -70,17 +70,19 @@ const transponderRequirement_t transponderRequirements[TRANSPONDER_PROVIDER_COUN
     {TRANSPONDER_ERLT, TRANSPONDER_DATA_LENGTH_ERLT, TRANSPONDER_TRANSMIT_DELAY_ERLT, TRANSPONDER_TRANSMIT_JITTER_ERLT}
 };
 
-void transponderUpdate(timeUs_t currentTimeUs)
+uint32_t transponderUpdate(PifTask *p_task)
 {
+    const timeUs_t currentTimeUs = p_task->_last_execute_time;
+
     static uint32_t jitterIndex = 0;
 
     if (!(transponderInitialised && transponderRepeat && isTransponderIrReady())) {
-        return;
+        return 0;
     }
 
     const bool updateNow = (timeDelta_t)(currentTimeUs - nextUpdateAtUs) >= 0L;
     if (!updateNow) {
-        return;
+        return 0;
     }
 
     uint8_t provider = transponderConfig()->provider;
@@ -101,6 +103,7 @@ void transponderUpdate(timeUs_t currentTimeUs)
 #endif
 
     transponderIrTransmit();
+    return 0;
 }
 
 void transponderInit(void)

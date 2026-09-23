@@ -1376,8 +1376,6 @@ extern "C" {
     bool isUpright(void) { return true; }
     float getMotorOutputLow(void) { return 1000.0; }
     float getMotorOutputHigh(void) { return 2047.0; }
-    void schedulerIgnoreTaskStateTime(void) { }
-    void schedulerIgnoreTaskExecRate(void) { }
     void schedulerIgnoreTaskExecTime(void) { }
     bool schedulerGetIgnoreTaskExecTime() { return false; }
     void schedulerSetNextStateTime(timeDelta_t) {}

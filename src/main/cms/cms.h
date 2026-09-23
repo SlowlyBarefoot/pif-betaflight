@@ -20,6 +20,9 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 #include "drivers/display.h"
 
 #include "common/time.h"
@@ -46,7 +49,7 @@ extern displayPort_t *pCurrentDisplay;
 
 // For main.c and scheduler
 void cmsInit(void);
-void cmsHandler(timeUs_t currentTimeUs);
+uint32_t cmsHandler(PifTask *p_task);
 
 bool cmsDisplayPortSelect(displayPort_t *instance);
 void cmsMenuOpen(void);

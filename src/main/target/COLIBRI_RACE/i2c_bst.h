@@ -20,9 +20,12 @@
 
 #pragma once
 
+// This module provides a task function, which is a PifEvtTaskLoop.
+#include "pif/pif_linker.h"
+
 void bstProcessInCommand(void);
 void bstSlaveProcessInCommand(void);
-void taskBstMasterProcess(timeUs_t currentTimeUs);
+uint32_t taskBstMasterProcess(PifTask *p_task);
 
 bool writeGpsPositionPrameToBST(void);
 bool writeRollPitchYawToBST(void);

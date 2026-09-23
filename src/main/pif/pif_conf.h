@@ -13,9 +13,10 @@
 
 // -------- pif Configuration --------------------
 
-// Adds __max_loop_time1us accounting and the 1 minute performance state.
-// Off for now: it costs time in the scheduler loop and there is no scheduler
-// loop yet.
+// Adds __max_loop_time1us accounting and the 1 minute performance state, plus
+// the pif_act_task_signal hook around every dispatch. Off: it costs time in
+// the loop that now runs the whole flight controller, and nothing reads what
+// it produces.
 //#define PIF_DEBUG
 
 #define PIF_INLINE							inline
@@ -48,20 +49,23 @@
 //#define PIF_TASK_STACK_SIZE				5
 
 // Identifiers for resources that must not be preempted by a yield. Betaflight
-// shares I2C and SPI buses between tasks, so these will be needed once tasks
-// are moved onto PIF.
+// shares I2C and SPI buses between tasks, so a task that holds one has to name
+// it here before scheduler.c can let any task yield. Nothing yields yet.
 #define DISALLOW_YIELD_ID_NONE				0
 #define DISALLOW_YIELD_ID_I2C				1
 #define DISALLOW_YIELD_ID_SPI				2
 
-// Per task execution time / delta time / trigger delay statistics. This is
-// what the project is ultimately after, but it enlarges PifTask and no task
-// is registered yet, so it stays off until tasks are ported.
-//#define PIF_USE_TASK_STATISTICS
+// Per task execution time / delta time / trigger delay statistics. Every
+// Betaflight task is a PifTask now, so this is what "tasks" in the CLI is
+// ultimately meant to report, and pifTaskManager_Print() needs it.
+#define PIF_USE_TASK_STATISTICS
 
 // Moving window of the longest run without yielding, used by TM_REALTIME to
-// skip a task that would not finish before the next release.
-//#define PIF_USE_BLOCK_TIME
+// skip a task that would not finish before the next release. Implied by
+// PIF_USE_TASK_STATISTICS above, and stated here because the gyro loop depends
+// on it: without it _fitsInSlack() lets every task start and TASK_GYRO loses
+// the guarantee it was made TM_REALTIME for.
+#define PIF_USE_BLOCK_TIME
 
 //#define PIF_TASK_GUARD_MIN_US				2
 //#define PIF_TASK_GUARD_MAX_US				100

@@ -31,6 +31,8 @@
 
 #include "drivers/adc.h"
 
+#include "sensors/adcinternal.h"
+
 typedef struct movingAverageStateUint16_s {
     uint32_t sum;
     uint16_t *values;
@@ -73,12 +75,12 @@ int16_t getCoreTemperatureCelsius(void)
     return coreTemperature;
 }
 
-void adcInternalProcess(timeUs_t currentTimeUs)
+uint32_t adcInternalProcess(PifTask *p_task)
 {
-    UNUSED(currentTimeUs);
+    UNUSED(p_task);
 
     if (adcInternalIsBusy()) {
-        return;
+        return 0;
     }
 
     uint16_t vrefintSample = adcInternalReadVrefint();
@@ -96,6 +98,7 @@ void adcInternalProcess(timeUs_t currentTimeUs)
     DEBUG_SET(DEBUG_ADC_INTERNAL, 3, vrefMv);
 
     adcInternalStartConversion(); // Start next conversion
+    return 0;
 }
 
 void adcInternalInit(void)
@@ -105,7 +108,7 @@ void adcInternalInit(void)
         while (adcInternalIsBusy()) {
             // empty
         }
-        adcInternalProcess(0);
+        adcInternalProcess(NULL);
     }
 }
 #else
