@@ -11,8 +11,9 @@
 #
 #     PIF_DIR := /path/to/pif
 #
-# Only the sources needed so far are built: the core, and pif_i2c, pif_imu_sensor
-# and pif_qmc5883 for the QMC5883L compass driver. pif_log.c is left out because
+# Only the sources needed so far are built: the core, pif_i2c, pif_imu_sensor
+# and pif_qmc5883 for the QMC5883L compass driver, and pif_spi and pif_dps310*
+# for the DPS310 barometer driver. pif_log.c is left out because
 # PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -40,6 +41,10 @@ PIF_SRC = \
             pif_i2c.c \
             pif_imu_sensor.c \
             pif_qmc5883.c \
+            pif_spi.c \
+            pif_dps310.c \
+            pif_dps310_i2c.c \
+            pif_dps310_spi.c \
             pif_linker.c
 
 SRC += $(PIF_SRC)

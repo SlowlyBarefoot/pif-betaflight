@@ -56,7 +56,9 @@
 
 #include "barometer.h"
 
-baro_t baro;                        // barometer access functions
+static void baroEvtRead(float pressure, float temperature);
+
+baro_t baro = { .dev.evt_read = baroEvtRead };     // barometer access functions
 
 PG_REGISTER_WITH_RESET_FN(barometerConfig_t, barometerConfig, PG_BAROMETER_CONFIG, 1);
 
@@ -469,6 +471,25 @@ uint32_t baroUpdate(timeUs_t currentTimeUs)
     schedulerSetNextStateTime(baroStateDurationUs[state]);
 
     return sleepTime;
+}
+
+// Sample from a driver that reads the chip on its own timing (see evt_read in
+// baroDev_t). Takes the place of BARO_STATE_PRESSURE_SAMPLE in baroUpdate().
+static void baroEvtRead(float pressure, float temperature)
+{
+    if (!sensors(SENSOR_BARO)) {
+        return;
+    }
+
+    baroPressure = lrintf(pressure);
+    baroTemperature = lrintf(temperature * 100);   // to centidegrees
+    baro.baroPressure = baroPressure;
+    baro.baroTemperature = baroTemperature;
+    baroPressureSum = recalculateBarometerTotal(baroPressureSum, baroPressure);
+
+    DEBUG_SET(DEBUG_BARO, 1, baroTemperature);
+    DEBUG_SET(DEBUG_BARO, 2, baroPressure);
+    DEBUG_SET(DEBUG_BARO, 3, baroPressureSum);
 }
 
 static float pressureToAltitude(const float pressure)

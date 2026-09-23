@@ -28,6 +28,7 @@ struct baroDev_s;
 typedef void (*baroOpFuncPtr)(struct baroDev_s *baro);                       // baro start operation
 typedef bool (*baroGetFuncPtr)(struct baroDev_s *baro);                       // baro read/get operation
 typedef void (*baroCalculateFuncPtr)(int32_t *pressure, int32_t *temperature); // baro calculation (filled params are pressure and temperature)
+typedef void (*baroEvtReadFuncPtr)(float pressure, float temperature);           // new sample from a self-timed driver (Pa, degrees C)
 
 // the 'u' in these variable names means 'uncompensated', 't' is temperature, 'p' pressure.
 typedef struct baroDev_s {
@@ -45,4 +46,10 @@ typedef struct baroDev_s {
     baroGetFuncPtr read_up;
     baroGetFuncPtr get_up;
     baroCalculateFuncPtr calculate;
+
+    // Set by sensors/barometer.c before detection. A driver that reads the
+    // chip on its own timing, such as the PIF driven DPS310, reports each
+    // sample here instead of filling in the functions above, and TASK_BARO
+    // stays off for it. Same signature as PIF's PifEvtBaroRead.
+    baroEvtReadFuncPtr evt_read;
 } baroDev_t;

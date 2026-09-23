@@ -527,7 +527,9 @@ void tasksInit(void)
 #endif
 
 #ifdef USE_BARO
-    setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO));
+    // The DPS310 is read by a PIF task of pif_dps310's own, which hands the
+    // samples to baro.dev.evt_read, so TASK_BARO has nothing to run for it.
+    setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO) && detectedSensors[SENSOR_INDEX_BARO] != BARO_DPS310);
 #endif
 
 #if defined(USE_BARO) || defined(USE_GPS)
