@@ -232,9 +232,6 @@ void telemetryProcess(uint32_t currentTime)
 #ifdef USE_TELEMETRY_SRXL
     handleSrxlTelemetry(currentTime);
 #endif
-#ifdef USE_TELEMETRY_IBUS
-    handleIbusTelemetry();
-#endif
 }
 
 bool telemetryIsSensorEnabled(sensor_e sensor)

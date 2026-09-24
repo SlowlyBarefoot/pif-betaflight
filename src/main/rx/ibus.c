@@ -52,146 +52,57 @@
 #include "telemetry/ibus.h"
 #include "telemetry/ibus_shared.h"
 
-#define IBUS_MAX_CHANNEL 18
-//In AFHDS there is 18 channels encoded in 14 slots (each slot is 2 byte long)
-#define IBUS_MAX_SLOTS 14
-#define IBUS_BUFFSIZE 32
-#define IBUS_MODEL_IA6B 0
-#define IBUS_MODEL_IA6 1
-#define IBUS_FRAME_GAP 500
+#include "drivers/serial_pif.h"
+
+#include "rc/pif_rc_ibus.h"
 
 #define IBUS_BAUDRATE 115200
-#define IBUS_TELEMETRY_PACKET_LENGTH (4)
-#define IBUS_SERIAL_RX_PACKET_LENGTH (32)
 
-static uint8_t ibusModel;
-static uint8_t ibusSyncByte;
-static uint8_t ibusFrameSize;
-static uint8_t ibusChannelOffset;
-static uint8_t rxBytesToIgnore;
-static uint16_t ibusChecksum;
+// The first 14 channels are 12 bit; the upper nibble of each carries a third of
+// one of the 4 channels that follow, which pif_rc_ibus has already put
+// together.
+#define IBUS_CHANNEL_MASK 0x0FFF
+
+// Framing, checksums and the telemetry replies of a shared port are done by
+// pif_rc_ibus, from the PifUart RX task of ibusSerialPif. ibusDataReceive()
+// only takes the channels of a servo frame.
+static serialPif_t ibusSerialPif;
+static PifRcIbus ibusRc;
 
 static bool ibusFrameDone = false;
-static uint32_t ibusChannelData[IBUS_MAX_CHANNEL];
+static uint32_t ibusChannelData[PIF_IBUS_EXP_CHANNEL_COUNT];
 
-static uint8_t ibus[IBUS_BUFFSIZE] = { 0, };
 static timeUs_t lastFrameTimeUs = 0;
 
-static bool isValidIa6bIbusPacketLength(uint8_t length)
+static void ibusDataReceive(PifRc *rc, uint16_t *channel, PifIssuerP issuer)
 {
-    return (length == IBUS_TELEMETRY_PACKET_LENGTH) || (length == IBUS_SERIAL_RX_PACKET_LENGTH);
-}
+    UNUSED(rc);
+    UNUSED(issuer);
 
-
-// Receive ISR callback
-static void ibusDataReceive(uint16_t c, void *data)
-{
-    UNUSED(data);
-
-    static timeUs_t ibusTimeLast;
-    static uint8_t ibusFramePosition;
-
-    const timeUs_t now = microsISR();
-
-    if (cmpTimeUs(now, ibusTimeLast) > IBUS_FRAME_GAP) {
-        ibusFramePosition = 0;
-        rxBytesToIgnore = 0;
-    } else if (rxBytesToIgnore) {
-        rxBytesToIgnore--;
-        return;
+    int i;
+    for (i = 0; i < PIF_IBUS_CHANNEL_COUNT; i++) {
+        ibusChannelData[i] = channel[i] & IBUS_CHANNEL_MASK;
+    }
+    for (; i < PIF_IBUS_EXP_CHANNEL_COUNT; i++) {
+        ibusChannelData[i] = channel[i];
     }
 
-    ibusTimeLast = now;
-
-    if (ibusFramePosition == 0) {
-        if (isValidIa6bIbusPacketLength(c)) {
-            ibusModel = IBUS_MODEL_IA6B;
-            ibusSyncByte = c;
-            ibusFrameSize = c;
-            ibusChannelOffset = 2;
-            ibusChecksum = 0xFFFF;
-        } else if ((ibusSyncByte == 0) && (c == 0x55)) {
-            ibusModel = IBUS_MODEL_IA6;
-            ibusSyncByte = 0x55;
-            ibusFrameSize = 31;
-            ibusChecksum = 0x0000;
-            ibusChannelOffset = 1;
-        } else if (ibusSyncByte != c) {
-            return;
-        }
-    }
-
-    ibus[ibusFramePosition] = (uint8_t)c;
-
-    if (ibusFramePosition == ibusFrameSize - 1) {
-        lastFrameTimeUs = now;
-        ibusFrameDone = true;
-    } else {
-        ibusFramePosition++;
-    }
-}
-
-
-static bool isChecksumOkIa6(void)
-{
-    uint8_t offset;
-    uint8_t i;
-    uint16_t chksum, rxsum;
-    chksum = ibusChecksum;
-    rxsum = ibus[ibusFrameSize - 2] + (ibus[ibusFrameSize - 1] << 8);
-    for (i = 0, offset = ibusChannelOffset; i < IBUS_MAX_SLOTS; i++, offset += 2) {
-        chksum += ibus[offset] + (ibus[offset + 1] << 8);
-    }
-    return chksum == rxsum;
-}
-
-
-static bool checksumIsOk(void) {
-    if (ibusModel == IBUS_MODEL_IA6 ) {
-        return isChecksumOkIa6();
-    } else {
-        return isChecksumOkIa6b(ibus, ibusFrameSize);
-    }
-}
-
-
-static void updateChannelData(void) {
-    uint8_t i;
-    uint8_t offset;
-    for (i = 0, offset = ibusChannelOffset; i < IBUS_MAX_SLOTS; i++, offset += 2) {
-        ibusChannelData[i] = ibus[offset] + ((ibus[offset + 1] & 0x0F) << 8);
-    }
-    //latest IBUS recievers are using prviously not used 4 bits on every channel to incresse total channel count
-    for (i = IBUS_MAX_SLOTS, offset = ibusChannelOffset + 1; i < IBUS_MAX_CHANNEL; i++, offset += 6) {
-        ibusChannelData[i] = ((ibus[offset] & 0xF0) >> 4) | (ibus[offset + 2] & 0xF0) | ((ibus[offset + 4] & 0xF0) << 4);
-    }
+    // The frame ended with the last byte the ISR saw, not when the RX task got
+    // round to it.
+    lastFrameTimeUs = serialPifLastRxTimeUs(&ibusSerialPif);
+    ibusFrameDone = true;
 }
 
 static uint8_t ibusFrameStatus(rxRuntimeState_t *rxRuntimeState)
 {
-    UNUSED(rxRuntimeState);
-
-    uint8_t frameStatus = RX_FRAME_PENDING;
-
     if (!ibusFrameDone) {
-        return frameStatus;
+        return RX_FRAME_PENDING;
     }
 
     ibusFrameDone = false;
+    rxRuntimeState->lastRcFrameTimeUs = lastFrameTimeUs;
 
-    if (checksumIsOk()) {
-        if (ibusModel == IBUS_MODEL_IA6 || ibusSyncByte == IBUS_SERIAL_RX_PACKET_LENGTH) {
-            updateChannelData();
-            frameStatus = RX_FRAME_COMPLETE;
-            rxRuntimeState->lastRcFrameTimeUs = lastFrameTimeUs;
-#if defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
-        } else {
-            rxBytesToIgnore = respondToIbusRequest(ibus);
-#endif
-        }
-    }
-
-    return frameStatus;
+    return RX_FRAME_COMPLETE;
 }
 
 
@@ -204,9 +115,8 @@ static float ibusReadRawRC(const rxRuntimeState_t *rxRuntimeState, uint8_t chan)
 bool ibusInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
 {
     UNUSED(rxConfig);
-    ibusSyncByte = 0;
 
-    rxRuntimeState->channelCount = IBUS_MAX_CHANNEL;
+    rxRuntimeState->channelCount = PIF_IBUS_EXP_CHANNEL_COUNT;
     rxRuntimeState->rxRefreshRate = 20000; // TODO - Verify speed
 
     rxRuntimeState->rcReadRawFn = ibusReadRawRC;
@@ -224,24 +134,32 @@ bool ibusInit(const rxConfig_t *rxConfig, rxRuntimeState_t *rxRuntimeState)
     bool portShared = false;
 #endif
 
+    if (!pifRcIbus_Init(&ibusRc, PIF_ID_AUTO)) {
+        return false;
+    }
+    pifRc_AttachEvtReceive(&ibusRc.parent, ibusDataReceive, NULL);
 
-    rxBytesToIgnore = 0;
-    serialPort_t *ibusPort = openSerialPort(portConfig->identifier,
+    serialPort_t *ibusPort = serialPifOpen(&ibusSerialPif, portConfig->identifier,
         FUNCTION_RX_SERIAL,
-        ibusDataReceive,
-        NULL,
         IBUS_BAUDRATE,
         portShared ? MODE_RXTX : MODE_RX,
         (rxConfig->serialrx_inverted ? SERIAL_INVERTED : 0) | (rxConfig->halfDuplex || portShared ? SERIAL_BIDIR : 0)
         );
+    if (!ibusPort) {
+        return false;
+    }
 
 #if defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
     if (portShared) {
-        initSharedIbusTelemetry(ibusPort);
+        initSharedIbusTelemetry();
+        ibusRc.evt_telemetry = respondToIbusRequest;
     }
 #endif
 
-    return ibusPort != NULL;
+    // Last, since this is what starts the PifUart tasks.
+    pifRcIbus_AttachUart(&ibusRc, &ibusSerialPif.uart);
+
+    return true;
 }
 
 #endif //SERIAL_RX

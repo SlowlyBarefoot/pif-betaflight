@@ -29,9 +29,9 @@
 #pragma once
 
 #include "platform.h"
-#include "drivers/serial.h"
 
-#define IBUS_CHECKSUM_SIZE (2)
+#include "rc/pif_rc_ibus.h"
+
 #define IBUS_SENSOR_COUNT 15
 
 typedef enum {
@@ -80,10 +80,8 @@ typedef enum {
 
 #if defined(USE_TELEMETRY) && defined(USE_TELEMETRY_IBUS)
 
-uint8_t respondToIbusRequest(uint8_t const * const ibusPacket);
-void initSharedIbusTelemetry(serialPort_t * port);
+// The evt_telemetry of the PifRcIbus that owns the port.
+BOOL respondToIbusRequest(PifRcIbus *ibus, uint8_t command, uint8_t address, PifRcIbusSensorinfo *sensor);
+void initSharedIbusTelemetry(void);
 
 #endif //defined(TELEMETRY) && defined(TELEMETRY_IBUS)
-
-
-bool isChecksumOkIa6b(const uint8_t *ibusPacket, const uint8_t length);

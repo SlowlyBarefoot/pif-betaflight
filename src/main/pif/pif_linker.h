@@ -60,6 +60,10 @@
 //                       driver uses (drivers/bus_spi_pif.c, likewise)
 //   12 x sizeof(uint16_t) for the PPM channel buffer when the receiver is
 //                       PPM (drivers/rx/rx_pwm.c, allocated in ppmRxInit())
+//   2 x sizeof(PifRingBuffer) per open serial port with a PifUart in front
+//                       (drivers/serial_pif.c: iBUS receiver and telemetry;
+//                       the buffers themselves are static). Each such port
+//                       also takes up to 2 of the PIF_TASK_SIZE task slots.
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take

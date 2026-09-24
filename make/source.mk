@@ -41,6 +41,7 @@ COMMON_SRC = \
             drivers/resource.c \
             drivers/rcc.c \
             drivers/serial.c \
+            drivers/serial_pif.c \
             drivers/serial_pinconfig.c \
             drivers/serial_uart.c \
             drivers/serial_uart_pinconfig.c \

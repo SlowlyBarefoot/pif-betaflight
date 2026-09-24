@@ -13,9 +13,10 @@
 #
 # Only the sources needed so far are built: the core, pif_i2c, pif_imu_sensor
 # and pif_qmc5883 for the QMC5883L compass driver, pif_spi and pif_dps310*
-# for the DPS310 barometer driver, pif_max7456 for the MAX7456 OSD driver, and
-# pif_rc and pif_rc_ppm for the PPM receiver input. pif_log.c is left out
-# because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
+# for the DPS310 barometer driver, pif_max7456 for the MAX7456 OSD driver,
+# pif_rc and pif_rc_ppm for the PPM receiver input, and pif_ring_buffer,
+# pif_uart and pif_rc_ibus for the iBUS receiver and telemetry. pif_log.c is
+# left out because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
 PIF_DIR ?= $(ROOT)/../pif
@@ -35,11 +36,13 @@ VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communicati
 PIF_SRC = \
             pif.c \
             pif_obj_array.c \
+            pif_ring_buffer.c \
             pif_task.c \
             pif_task_manager.c \
             pif_timer.c \
             pif_timer_manager.c \
             pif_i2c.c \
+            pif_uart.c \
             pif_imu_sensor.c \
             pif_qmc5883.c \
             pif_spi.c \
@@ -48,6 +51,7 @@ PIF_SRC = \
             pif_dps310_spi.c \
             pif_max7456.c \
             pif_rc.c \
+            pif_rc_ibus.c \
             pif_rc_ppm.c \
             pif_linker.c
 
