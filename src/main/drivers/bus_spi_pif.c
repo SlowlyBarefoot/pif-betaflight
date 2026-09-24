@@ -23,10 +23,13 @@
 
 #include "platform.h"
 
+#include "build/atomic.h"
+
 #ifdef USE_SPI
 
 #include "drivers/bus.h"
 #include "drivers/bus_spi.h"
+#include "drivers/nvic.h"
 
 #include "bus_spi_pif.h"
 
@@ -35,8 +38,11 @@
 // that does not wait needs segments that outlive the call. Each device slot of
 // a port gets its own, because spiSequence() drops a segment list that is
 // already queued, and pending marks them as still in use.
+//
+// A transfer may be started from an interrupt (a gyro EXTI handler) as well as
+// from a task, so a slot is released and claimed with interrupts masked.
 typedef struct spiPifAsync_s {
-    const PifSpiDevice *device;
+    PifSpiDevice *device;
     bool pending;
     busSegment_t segments[2];
 } spiPifAsync_t;
@@ -60,9 +66,26 @@ static void spiPifReleaseIfIdle(const PifSpiDevice *pDevice, const extDevice_t *
 
     spiPifAsync_t *pAsync = spiPifAsync[pDevice->_p_port - spiPifPorts];
 
-    for (int i = 0; i < SPI_PIF_DEVICE_COUNT; i++) {
-        pAsync[i].pending = false;
+    ATOMIC_BLOCK(NVIC_PRIO_MAX) {
+        // Checked again, as a transfer may have been started meanwhile
+        if (!spiIsBusy(dev)) {
+            for (int i = 0; i < SPI_PIF_DEVICE_COUNT; i++) {
+                pAsync[i].pending = false;
+            }
+        }
     }
+}
+
+// Segment callback of a transfer that does not wait, called by the SPI driver
+// when it is over, from the DMA interrupt when it used DMA. The slot is not
+// released here: the driver still reads its terminating segment after this.
+static busStatus_e spiPifTransferDone(uint32_t arg)
+{
+    spiPifAsync_t *pSlot = (spiPifAsync_t *)arg;
+
+    pifSpiDevice_sigTransferDone(pSlot->device);
+
+    return BUS_READY;
 }
 
 // A plain transfer with no register address, which pif_max7456 uses for the
@@ -85,6 +108,10 @@ static void spiPifActTransfer(PifSpiDevice *pDevice, uint8_t *pWrite, uint8_t *p
 // screen by DMA. It is queued behind a transfer still on the bus, as
 // spiSequence() does, and act_is_busy reports it until the bus is free. It
 // fails while the previous transfer of the same device may still be queued.
+// When it is over, pifSpiDevice_sigTransferDone() is called for the device
+// through a segment callback, which takes over the callbackArg of the device's
+// extDevice_t, so that device must not also run Betaflight segments with a
+// callback of their own. It may be called from an interrupt.
 static BOOL spiPifActStartTransfer(PifSpiDevice *pDevice, uint8_t *pWrite, uint8_t *pRead, size_t size)
 {
     const extDevice_t *dev = spiPifExtDevice(pDevice);
@@ -99,25 +126,34 @@ static BOOL spiPifActStartTransfer(PifSpiDevice *pDevice, uint8_t *pWrite, uint8
     // slot left behind by a removed device is taken over once it is free.
     spiPifAsync_t *pAsync = spiPifAsync[pDevice->_p_port - spiPifPorts];
     spiPifAsync_t *pSlot = NULL;
+    bool claimed = false;
 
-    for (int i = 0; i < SPI_PIF_DEVICE_COUNT; i++) {
-        if (pAsync[i].device == pDevice) {
-            pSlot = &pAsync[i];
-            break;
+    ATOMIC_BLOCK(NVIC_PRIO_MAX) {
+        for (int i = 0; i < SPI_PIF_DEVICE_COUNT; i++) {
+            if (pAsync[i].device == pDevice) {
+                pSlot = &pAsync[i];
+                break;
+            }
+            if (!pSlot && !pAsync[i].pending) {
+                pSlot = &pAsync[i];
+            }
         }
-        if (!pSlot && !pAsync[i].pending) {
-            pSlot = &pAsync[i];
+
+        if (pSlot && !pSlot->pending) {
+            pSlot->device = pDevice;
+            pSlot->pending = true;
+            claimed = true;
         }
     }
 
-    if (!pSlot || pSlot->pending) {
+    if (!claimed) {
         return FALSE;
     }
 
-    pSlot->device = pDevice;
-    pSlot->pending = true;
-    pSlot->segments[0] = (busSegment_t){.u.buffers = {pWrite, pRead}, (int)size, true, NULL};
+    pSlot->segments[0] = (busSegment_t){.u.buffers = {pWrite, pRead}, (int)size, true, spiPifTransferDone};
     pSlot->segments[1] = (busSegment_t){.u.link = {NULL, NULL}, 0, true, NULL};
+
+    ((extDevice_t *)dev)->callbackArg = (uint32_t)pSlot;
 
     spiSequence(dev, &pSlot->segments[0]);
 

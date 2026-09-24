@@ -15,8 +15,9 @@
 # and pif_qmc5883 for the QMC5883L compass driver, pif_spi and pif_dps310*
 # for the DPS310 barometer driver, pif_max7456 for the MAX7456 OSD driver,
 # pif_rc and pif_rc_ppm for the PPM receiver input, and pif_ring_buffer,
-# pif_uart and pif_rc_ibus for the iBUS receiver and telemetry, and pif_buzzer
-# for the beeper. pif_log.c is left out because PIF_NO_LOG is set in
+# pif_uart and pif_rc_ibus for the iBUS receiver and telemetry, pif_buzzer
+# for the beeper, and pif_bmi270 and pif_bmi270_spi for the BMI270 gyro and
+# accelerometer. pif_log.c is left out because PIF_NO_LOG is set in
 # src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -50,6 +51,8 @@ PIF_SRC = \
             pif_dps310.c \
             pif_dps310_i2c.c \
             pif_dps310_spi.c \
+            pif_bmi270.c \
+            pif_bmi270_spi.c \
             pif_max7456.c \
             pif_rc.c \
             pif_rc_ibus.c \

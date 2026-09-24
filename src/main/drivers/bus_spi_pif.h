@@ -32,6 +32,10 @@
  * for the bus instead, like spiReadWriteBuf(), so it always goes through.
  * pifSpiDevice_StartTransfer() queues the transfer with spiSequence() and
  * returns at once; pifSpiDevice_IsBusy() reports it until the bus is free.
+ * When it is over, the event attached with pifSpiDevice_AttachEvtTransferDone()
+ * is called from the SPI DMA interrupt (or from spiSequence() itself when the
+ * bus does not use DMA). pifSpiDevice_StartTransfer() may be called from an
+ * interrupt. It takes over the callbackArg of the device's extDevice_t.
  */
 
 #pragma once
