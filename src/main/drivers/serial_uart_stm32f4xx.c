@@ -315,15 +315,15 @@ void uartIrqHandler(uartPort_t *s)
         if (s->port.rxCallback) {
             s->port.rxCallback(s->USARTx->DR, s->port.rxCallbackData);
         } else {
-            s->port.rxBuffer[s->port.rxBufferHead] = s->USARTx->DR;
-            s->port.rxBufferHead = (s->port.rxBufferHead + 1) % s->port.rxBufferSize;
+            pifUart_PutRxByte(&s->uart, s->USARTx->DR);
         }
     }
 
     if (!s->txDMAResource && (USART_GetITStatus(s->USARTx, USART_IT_TXE) == SET)) {
-        if (s->port.txBufferTail != s->port.txBufferHead) {
-            USART_SendData(s->USARTx, s->port.txBuffer[s->port.txBufferTail]);
-            s->port.txBufferTail = (s->port.txBufferTail + 1) % s->port.txBufferSize;
+        uint8_t data;
+
+        if (pifUart_GetTxByte(&s->uart, &data) & PIF_UART_SEND_DATA_STATE_DATA) {
+            USART_SendData(s->USARTx, data);
         } else {
             USART_ITConfig(s->USARTx, USART_IT_TXE, DISABLE);
         }

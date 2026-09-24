@@ -14,11 +14,11 @@
 # Only the sources needed so far are built: the core, pif_i2c, pif_imu_sensor
 # and pif_qmc5883 for the QMC5883L compass driver, pif_spi and pif_dps310*
 # for the DPS310 barometer driver, pif_max7456 for the MAX7456 OSD driver,
-# pif_rc and pif_rc_ppm for the PPM receiver input, and pif_ring_buffer,
-# pif_uart and pif_rc_ibus for the iBUS receiver and telemetry, pif_buzzer
-# for the beeper, and pif_bmi270 and pif_bmi270_spi for the BMI270 gyro and
-# accelerometer. pif_log.c is left out because PIF_NO_LOG is set in
-# src/main/pif/pif_conf.h.
+# pif_rc and pif_rc_ppm for the PPM receiver input, pif_ring_buffer and
+# pif_uart for the hardware UART driver, pif_rc_ibus with them for the iBUS
+# receiver and telemetry, pif_buzzer for the beeper, and pif_bmi270 and
+# pif_bmi270_spi for the BMI270 gyro and accelerometer. pif_log.c is left out
+# because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
 PIF_DIR ?= $(ROOT)/../pif

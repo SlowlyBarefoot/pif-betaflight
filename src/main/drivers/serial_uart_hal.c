@@ -168,9 +168,8 @@ void uartReconfigure(uartPort_t *uartPort)
             /* Associate the initialized DMA handle to the UART handle */
             __HAL_LINKDMA(&uartPort->Handle, hdmarx, uartPort->rxDMAHandle);
 
+            uartResetRxDmaBuffer(uartPort);
             HAL_UART_Receive_DMA(&uartPort->Handle, (uint8_t*)uartPort->port.rxBuffer, uartPort->port.rxBufferSize);
-
-            uartPort->rxDMAPos = __HAL_DMA_GET_COUNTER(&uartPort->rxDMAHandle);
         } else
 #endif
         {
@@ -250,25 +249,24 @@ void uartTryStartTxDMA(uartPort_t *s)
             return;
         }
 
-        if (s->port.txBufferHead == s->port.txBufferTail) {
+        // The previous transaction, if any, has gone out in full.
+        if (s->txDMALength) {
+            pifUart_EndGetTxData(&s->uart, s->txDMALength);
+            s->txDMALength = 0;
+        }
+
+        uint8_t *data;
+        uint16_t length = 0;
+
+        if (!(pifUart_StartGetTxData(&s->uart, &data, &length) & PIF_UART_SEND_DATA_STATE_DATA)) {
             // No more data to transmit
-            s->txDMAEmpty = true;
             return;
         }
 
-        uint16_t size;
-        uint32_t fromwhere = s->port.txBufferTail;
+        // Start a new transaction over the contiguous part of the buffer.
+        s->txDMALength = length;
 
-        if (s->port.txBufferHead > s->port.txBufferTail) {
-            size = s->port.txBufferHead - s->port.txBufferTail;
-            s->port.txBufferTail = s->port.txBufferHead;
-        } else {
-            size = s->port.txBufferSize - s->port.txBufferTail;
-            s->port.txBufferTail = 0;
-        }
-        s->txDMAEmpty = false;
-
-        HAL_UART_Transmit_DMA(&s->Handle, (uint8_t *)&s->port.txBuffer[fromwhere], size);
+        HAL_UART_Transmit_DMA(&s->Handle, data, length);
     }
 }
 
@@ -311,8 +309,7 @@ FAST_IRQ_HANDLER void uartIrqHandler(uartPort_t *s)
         if (s->port.rxCallback) {
             s->port.rxCallback(rbyte, s->port.rxCallbackData);
         } else {
-            s->port.rxBuffer[s->port.rxBufferHead] = rbyte;
-            s->port.rxBufferHead = (s->port.rxBufferHead + 1) % s->port.rxBufferSize;
+            pifUart_PutRxByte(&s->uart, rbyte);
         }
         CLEAR_BIT(huart->Instance->CR1, (USART_CR1_PEIE));
 
@@ -351,17 +348,18 @@ FAST_IRQ_HANDLER void uartIrqHandler(uartPort_t *s)
         (__HAL_UART_GET_IT(huart, UART_IT_TXE) != RESET)) {
         /* Check that a Tx process is ongoing */
         if (huart->gState != HAL_UART_STATE_BUSY_TX) {
-            if (s->port.txBufferTail == s->port.txBufferHead) {
+            uint8_t data;
+
+            if (!(pifUart_GetTxByte(&s->uart, &data) & PIF_UART_SEND_DATA_STATE_DATA)) {
                 huart->TxXferCount = 0;
                 /* Disable the UART Transmit Data Register Empty Interrupt */
                 CLEAR_BIT(huart->Instance->CR1, USART_CR1_TXEIE);
             } else {
                 if ((huart->Init.WordLength == UART_WORDLENGTH_9B) && (huart->Init.Parity == UART_PARITY_NONE)) {
-                    huart->Instance->TDR = (((uint16_t) s->port.txBuffer[s->port.txBufferTail]) & (uint16_t) 0x01FFU);
+                    huart->Instance->TDR = (((uint16_t) data) & (uint16_t) 0x01FFU);
                 } else {
-                    huart->Instance->TDR = (uint8_t)(s->port.txBuffer[s->port.txBufferTail]);
+                    huart->Instance->TDR = data;
                 }
-                s->port.txBufferTail = (s->port.txBufferTail + 1) % s->port.txBufferSize;
             }
         }
     }

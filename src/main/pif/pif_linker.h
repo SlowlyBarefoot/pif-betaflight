@@ -64,13 +64,21 @@
 //                       (drivers/serial_pif.c: iBUS receiver and telemetry;
 //                       the buffers themselves are static). Each such port
 //                       also takes up to 2 of the PIF_TASK_SIZE task slots.
+//   2 x sizeof(PifRingBuffer) per hardware UART, for the PifUart that holds
+//                       its RX and TX buffers (drivers/serial_uart.c, allocated
+//                       on the first open of the UART and kept; the buffers
+//                       themselves are the static uartNRxBuffer/TxBuffer).
+//                       sizeof(PifRingBuffer) is 28 bytes, about 80 bytes per
+//                       UART with the allocator overhead, so up to 480 bytes
+//                       with all six F4 UARTs in use. No tasks.
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take
 // 40 x 152 = 6080 bytes. The timer and PifTimer slots bring the total to around
-// 6.7 KB and leave about 1.5 KB spare. Anything added to PifTask costs 152
+// 6.7 KB, and the 512 bytes on top of 8 KB are for the UART ring buffers, which
+// leaves about 1.5 KB spare for the rest. Anything added to PifTask costs 152
 // bytes here per 40 slots, so check this figure when PIF grows a field.
-#define PIF_HEAP_SIZE			8192
+#define PIF_HEAP_SIZE			(8192 + 512)
 
 // The one PifImuSensor of the board. A PIF gyro, accelerometer or magnetometer
 // driver registers its read function and gain on it when it is initialised,

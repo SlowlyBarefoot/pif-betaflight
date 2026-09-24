@@ -198,18 +198,14 @@ void uartIrqHandler(uartPort_t *s)
         if (s->port.rxCallback) {
             s->port.rxCallback(s->USARTx->DR, s->port.rxCallbackData);
         } else {
-            s->port.rxBuffer[s->port.rxBufferHead++] = s->USARTx->DR;
-            if (s->port.rxBufferHead >= s->port.rxBufferSize) {
-                s->port.rxBufferHead = 0;
-            }
+            pifUart_PutRxByte(&s->uart, s->USARTx->DR);
         }
     }
     if (SR & USART_FLAG_TXE) {
-        if (s->port.txBufferTail != s->port.txBufferHead) {
-            s->USARTx->DR = s->port.txBuffer[s->port.txBufferTail++];
-            if (s->port.txBufferTail >= s->port.txBufferSize) {
-                s->port.txBufferTail = 0;
-            }
+        uint8_t data;
+
+        if (pifUart_GetTxByte(&s->uart, &data) & PIF_UART_SEND_DATA_STATE_DATA) {
+            s->USARTx->DR = data;
         } else {
             USART_ITConfig(s->USARTx, USART_IT_TXE, DISABLE);
         }

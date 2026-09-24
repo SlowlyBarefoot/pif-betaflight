@@ -22,6 +22,8 @@
 
 #include "drivers/dma.h" // For dmaResource_t
 
+#include "communication/pif_uart.h"
+
 // Since serial ports can be used for any function these buffer sizes should be equal
 // The two largest things that need to be sent are: 1, MSP responses, 2, UBLOX SVINFO packet.
 
@@ -60,7 +62,14 @@ typedef struct uartPort_s {
     uint32_t rxDMAIrq;
     uint32_t txDMAIrq;
 
+    // Buffer index the RX DMA had written up to when the PifUart RX head was
+    // last moved after it. The DMA writes the RX buffer memory from index 0,
+    // see uartRxDmaStart().
     uint32_t rxDMAPos;
+    // Bytes the running TX DMA transfer takes from the PifUart TX buffer. They
+    // stay in the buffer until the transfer is over, and are removed by the
+    // next uartTryStartTxDMA().
+    uint16_t txDMALength;
 
     uint32_t txDMAPeripheralBaseAddr;
     uint32_t rxDMAPeripheralBaseAddr;
@@ -71,7 +80,13 @@ typedef struct uartPort_s {
     UART_HandleTypeDef Handle;
 #endif
     USART_TypeDef *USARTx;
-    bool txDMAEmpty;
+
+    // Holds the RX and TX buffers of the port in place of the head and tail
+    // indices of serialPort_t. The buffers are the static uartNRxBuffer and
+    // uartNTxBuffer arrays; only the PifRingBuffer objects come from the PIF
+    // heap, once per UART on its first uartOpen(). No PifUart task is attached,
+    // so the IRQ handler and the DMA move the bytes themselves.
+    PifUart uart;
 } uartPort_t;
 
 void uartPinConfigure(const serialPinConfig_t *pSerialPinConfig);

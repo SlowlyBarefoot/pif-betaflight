@@ -115,20 +115,47 @@ LPUART_BUFFERS(1);
 
 #undef UART_BUFFERS
 
+// Brings up the PifUart of the port on the first open of the UART, over the
+// static buffers of the UART, and empties its buffers on every later one.
+static bool uartInitPifUart(uartDevice_t *uartdev, uint32_t baudRate)
+{
+    const uartHardware_t *hardware = uartdev->hardware;
+    PifUart *uart = &uartdev->port.uart;
+
+    if (uart->_p_rx_buffer) {
+        pifRingBuffer_Empty(uart->_p_rx_buffer);
+        pifRingBuffer_Empty(uart->_p_tx_buffer);
+        return pifUart_ChangeBaudrate(uart, baudRate);
+    }
+
+    if (!pifUart_Init(uart, PIF_ID_AUTO, baudRate)
+        || !pifUart_AssignRxBuffer(uart, hardware->rxBufferSize, (uint8_t *)hardware->rxBuffer)
+        || !pifUart_AssignTxBuffer(uart, hardware->txBufferSize, (uint8_t *)hardware->txBuffer)) {
+        pifUart_Clear(uart);
+        return false;
+    }
+
+    return true;
+}
+
 serialPort_t *uartOpen(UARTDevice_e device, serialReceiveCallbackPtr rxCallback, void *rxCallbackData, uint32_t baudRate, portMode_e mode, portOptions_e options)
 {
+    uartDevice_t *uartdev = uartDevmap[device];
+
+    if (!uartdev || !uartInitPifUart(uartdev, baudRate)) {
+        return NULL;
+    }
+
     uartPort_t *uartPort = serialUART(device, baudRate, mode, options);
 
     if (!uartPort)
         return (serialPort_t *)uartPort;
 
 #ifdef USE_DMA
-    uartPort->txDMAEmpty = true;
+    uartPort->txDMALength = 0;
 #endif
 
     // common serial initialisation code should move to serialPort::init()
-    uartPort->port.rxBufferHead = uartPort->port.rxBufferTail = 0;
-    uartPort->port.txBufferHead = uartPort->port.txBufferTail = 0;
     // callback works for IRQ-based RX ONLY
     uartPort->port.rxCallback = rxCallback;
     uartPort->port.rxCallbackData = rxCallbackData;
@@ -145,6 +172,7 @@ static void uartSetBaudRate(serialPort_t *instance, uint32_t baudRate)
 {
     uartPort_t *uartPort = (uartPort_t *)instance;
     uartPort->port.baudRate = baudRate;
+    pifUart_ChangeBaudrate(&uartPort->uart, baudRate);
     uartReconfigure(uartPort);
 }
 
@@ -155,110 +183,83 @@ static void uartSetMode(serialPort_t *instance, portMode_e mode)
     uartReconfigure(uartPort);
 }
 
+#ifdef USE_DMA
+void uartResetRxDmaBuffer(uartPort_t *uartPort)
+{
+    PifRingBuffer *rxBuffer = uartPort->uart._p_rx_buffer;
+
+    // A circular DMA always starts at the base of its memory, so the ring
+    // buffer has to start at index 0 as well. Re-initialising it over the
+    // same memory is the only way PifRingBuffer offers to get there.
+    pifRingBuffer_InitStatic(rxBuffer, rxBuffer->_id, rxBuffer->_size, (uint8_t *)uartPort->port.rxBuffer);
+    pifRingBuffer_SetName(rxBuffer, "RB");
+    uartPort->rxDMAPos = 0;
+}
+
+// Moves the PifUart RX head up to where the RX DMA has written. Only runs in
+// the context that reads the port, which is also the only one that touches
+// the RX buffer when the port receives by DMA.
+static void uartSyncRxDma(uartPort_t *uartPort)
+{
+    const uint32_t size = uartPort->port.rxBufferSize;
+#ifdef USE_HAL_DRIVER
+    const uint32_t counter = __HAL_DMA_GET_COUNTER(uartPort->Handle.hdmarx);
+#else
+    const uint32_t counter = xDMA_GetCurrDataCounter(uartPort->rxDMAResource);
+#endif
+
+    // The counter runs down from the buffer size and is reloaded after 1.
+    const uint32_t pos = (size - counter) % size;
+    const uint32_t count = (pos + size - uartPort->rxDMAPos) % size;
+
+    if (count) {
+        pifRingBuffer_MoveHead(uartPort->uart._p_rx_buffer, count);
+        uartPort->rxDMAPos = pos;
+    }
+}
+#endif
+
 static uint32_t uartTotalRxBytesWaiting(const serialPort_t *instance)
 {
-    const uartPort_t *uartPort = (const uartPort_t*)instance;
-
-#ifdef USE_DMA
-    if (uartPort->rxDMAResource) {
-        // XXX Could be consolidated
-#ifdef USE_HAL_DRIVER
-        uint32_t rxDMAHead = __HAL_DMA_GET_COUNTER(uartPort->Handle.hdmarx);
-#else
-        uint32_t rxDMAHead = xDMA_GetCurrDataCounter(uartPort->rxDMAResource);
-#endif
-
-        // uartPort->rxDMAPos and rxDMAHead represent distances from the end
-        // of the buffer.  They count DOWN as they advance.
-        if (uartPort->rxDMAPos >= rxDMAHead) {
-            return uartPort->rxDMAPos - rxDMAHead;
-        } else {
-            return uartPort->port.rxBufferSize + uartPort->rxDMAPos - rxDMAHead;
-        }
-    }
-#endif
-
-    if (uartPort->port.rxBufferHead >= uartPort->port.rxBufferTail) {
-        return uartPort->port.rxBufferHead - uartPort->port.rxBufferTail;
-    } else {
-        return uartPort->port.rxBufferSize + uartPort->port.rxBufferHead - uartPort->port.rxBufferTail;
-    }
-}
-
-static uint32_t uartTotalTxBytesFree(const serialPort_t *instance)
-{
-    const uartPort_t *uartPort = (const uartPort_t*)instance;
-
-    uint32_t bytesUsed;
-
-    if (uartPort->port.txBufferHead >= uartPort->port.txBufferTail) {
-        bytesUsed = uartPort->port.txBufferHead - uartPort->port.txBufferTail;
-    } else {
-        bytesUsed = uartPort->port.txBufferSize + uartPort->port.txBufferHead - uartPort->port.txBufferTail;
-    }
-
-#ifdef USE_DMA
-    if (uartPort->txDMAResource) {
-        /*
-         * When we queue up a DMA request, we advance the Tx buffer tail before the transfer finishes, so we must add
-         * the remaining size of that in-progress transfer here instead:
-         */
-#ifdef USE_HAL_DRIVER
-        bytesUsed += __HAL_DMA_GET_COUNTER(uartPort->Handle.hdmatx);
-#else
-        bytesUsed += xDMA_GetCurrDataCounter(uartPort->txDMAResource);
-#endif
-
-        /*
-         * If the Tx buffer is being written to very quickly, we might have advanced the head into the buffer
-         * space occupied by the current DMA transfer. In that case the "bytesUsed" total will actually end up larger
-         * than the total Tx buffer size, because we'll end up transmitting the same buffer region twice. (So we'll be
-         * transmitting a garbage mixture of old and new bytes).
-         *
-         * Be kind to callers and pretend like our buffer can only ever be 100% full.
-         */
-        if (bytesUsed >= uartPort->port.txBufferSize - 1) {
-            return 0;
-        }
-    }
-#endif
-
-    return (uartPort->port.txBufferSize - 1) - bytesUsed;
-}
-
-static bool isUartTransmitBufferEmpty(const serialPort_t *instance)
-{
-    const uartPort_t *uartPort = (const uartPort_t *)instance;
-#ifdef USE_DMA
-    if (uartPort->txDMAResource) {
-        return uartPort->txDMAEmpty;
-    } else
-#endif
-    {
-        return uartPort->port.txBufferTail == uartPort->port.txBufferHead;
-    }
-}
-
-static uint8_t uartRead(serialPort_t *instance)
-{
-    uint8_t ch;
     uartPort_t *uartPort = (uartPort_t *)instance;
 
 #ifdef USE_DMA
     if (uartPort->rxDMAResource) {
-        ch = uartPort->port.rxBuffer[uartPort->port.rxBufferSize - uartPort->rxDMAPos];
-        if (--uartPort->rxDMAPos == 0)
-            uartPort->rxDMAPos = uartPort->port.rxBufferSize;
-    } else
-#endif
-    {
-        ch = uartPort->port.rxBuffer[uartPort->port.rxBufferTail];
-        if (uartPort->port.rxBufferTail + 1 >= uartPort->port.rxBufferSize) {
-            uartPort->port.rxBufferTail = 0;
-        } else {
-            uartPort->port.rxBufferTail++;
-        }
+        uartSyncRxDma(uartPort);
     }
+#endif
+
+    return pifUart_GetFillSizeOfRxBuffer(&uartPort->uart);
+}
+
+static uint32_t uartTotalTxBytesFree(const serialPort_t *instance)
+{
+    uartPort_t *uartPort = (uartPort_t *)instance;
+
+    // The bytes of a running TX DMA transfer are still in the buffer, so
+    // they are counted here without having to ask the DMA.
+    return (uartPort->port.txBufferSize - 1) - pifUart_GetFillSizeOfTxBuffer(&uartPort->uart);
+}
+
+static bool isUartTransmitBufferEmpty(const serialPort_t *instance)
+{
+    uartPort_t *uartPort = (uartPort_t *)instance;
+
+    return pifUart_GetFillSizeOfTxBuffer(&uartPort->uart) == 0;
+}
+
+static uint8_t uartRead(serialPort_t *instance)
+{
+    uint8_t ch = 0;
+    uartPort_t *uartPort = (uartPort_t *)instance;
+
+#ifdef USE_DMA
+    if (uartPort->rxDMAResource) {
+        uartSyncRxDma(uartPort);
+    }
+#endif
+
+    pifRingBuffer_GetByte(uartPort->uart._p_rx_buffer, &ch);
 
     return ch;
 }
@@ -267,13 +268,8 @@ static void uartWrite(serialPort_t *instance, uint8_t ch)
 {
     uartPort_t *uartPort = (uartPort_t *)instance;
 
-    uartPort->port.txBuffer[uartPort->port.txBufferHead] = ch;
-
-    if (uartPort->port.txBufferHead + 1 >= uartPort->port.txBufferSize) {
-        uartPort->port.txBufferHead = 0;
-    } else {
-        uartPort->port.txBufferHead++;
-    }
+    // A full buffer drops the byte instead of overwriting the oldest ones.
+    pifUart_SendTxData(&uartPort->uart, &ch, 1);
 
 #ifdef USE_DMA
     if (uartPort->txDMAResource) {

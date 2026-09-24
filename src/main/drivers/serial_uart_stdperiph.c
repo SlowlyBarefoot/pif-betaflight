@@ -121,6 +121,8 @@ void uartReconfigure(uartPort_t *uartPort)
     DMA_InitTypeDef DMA_InitStructure;
     if (uartPort->port.mode & MODE_RX) {
         if (uartPort->rxDMAResource) {
+            uartResetRxDmaBuffer(uartPort);
+
             DMA_StructInit(&DMA_InitStructure);
             DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
             DMA_InitStructure.DMA_PeripheralBaseAddr = uartPort->rxDMAPeripheralBaseAddr;
@@ -149,7 +151,6 @@ void uartReconfigure(uartPort_t *uartPort)
             xDMA_Init(uartPort->rxDMAResource, &DMA_InitStructure);
             xDMA_Cmd(uartPort->rxDMAResource, ENABLE);
             USART_DMACmd(uartPort->USARTx, USART_DMAReq_Rx, ENABLE);
-            uartPort->rxDMAPos = xDMA_GetCurrDataCounter(uartPort->rxDMAResource);
         } else {
             USART_ClearITPendingBit(uartPort->USARTx, USART_IT_RXNE);
             USART_ITConfig(uartPort->USARTx, USART_IT_RXNE, ENABLE);
@@ -209,6 +210,9 @@ void uartTryStartTxDMA(uartPort_t *s)
     // uartWrite and handleUsartTxDma (an ISR).
 
     ATOMIC_BLOCK(NVIC_PRIO_SERIALUART_TXDMA) {
+        uint8_t *data;
+        uint16_t length = 0;
+
         if (IS_DMA_ENABLED(s->txDMAResource)) {
             // DMA is already in progress
             return;
@@ -223,28 +227,27 @@ void uartTryStartTxDMA(uartPort_t *s)
             goto reenable;
         }
 
-        if (s->port.txBufferHead == s->port.txBufferTail) {
+        // The previous transaction, if any, has gone out in full.
+        if (s->txDMALength) {
+            pifUart_EndGetTxData(&s->uart, s->txDMALength);
+            s->txDMALength = 0;
+        }
+
+        if (!(pifUart_StartGetTxData(&s->uart, &data, &length) & PIF_UART_SEND_DATA_STATE_DATA)) {
             // No more data to transmit.
-            s->txDMAEmpty = true;
             return;
         }
 
-        // Start a new transaction.
+        // Start a new transaction over the contiguous part of the buffer.
 
 #ifdef STM32F4
-        xDMA_MemoryTargetConfig(s->txDMAResource, (uint32_t)&s->port.txBuffer[s->port.txBufferTail], DMA_Memory_0);
+        xDMA_MemoryTargetConfig(s->txDMAResource, (uint32_t)data, DMA_Memory_0);
 #else
-        DMAx_SetMemoryAddress(s->txDMAResource, (uint32_t)&s->port.txBuffer[s->port.txBufferTail]);
+        DMAx_SetMemoryAddress(s->txDMAResource, data);
 #endif
 
-        if (s->port.txBufferHead > s->port.txBufferTail) {
-            xDMA_SetCurrDataCounter(s->txDMAResource, s->port.txBufferHead - s->port.txBufferTail);
-            s->port.txBufferTail = s->port.txBufferHead;
-        } else {
-            xDMA_SetCurrDataCounter(s->txDMAResource, s->port.txBufferSize - s->port.txBufferTail);
-            s->port.txBufferTail = 0;
-        }
-        s->txDMAEmpty = false;
+        xDMA_SetCurrDataCounter(s->txDMAResource, length);
+        s->txDMALength = length;
 
     reenable:
         xDMA_Cmd(s->txDMAResource, ENABLE);
