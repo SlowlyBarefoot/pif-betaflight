@@ -28,7 +28,10 @@
  * extDevice_t of its chip as p_client, and every transfer goes through that
  * extDevice_t. Register reads and writes block until the transfer is over,
  * like spiReadRegMskBufRB() and spiWriteReg(), and fail rather than wait when
- * a DMA transfer still holds the bus.
+ * a DMA transfer still holds the bus. A plain pifSpiDevice_Transfer() waits
+ * for the bus instead, like spiReadWriteBuf(), so it always goes through.
+ * pifSpiDevice_StartTransfer() queues the transfer with spiSequence() and
+ * returns at once; pifSpiDevice_IsBusy() reports it until the bus is free.
  */
 
 #pragma once

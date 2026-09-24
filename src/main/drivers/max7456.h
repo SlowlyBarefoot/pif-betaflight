@@ -24,6 +24,8 @@
 
 #include "drivers/display.h"
 
+#include "osd/pif_max7456.h"
+
 /** PAL or NTSC, value is number of chars total */
 #define VIDEO_BUFFER_CHARS_NTSC   390
 #define VIDEO_BUFFER_CHARS_PAL    480
@@ -41,17 +43,15 @@ typedef enum {
     MAX7456_INIT_NOT_CONFIGURED = -2,
 } max7456InitStatus_e;
 
+extern PifMax7456 max7456;
 extern uint16_t maxScreenSize;
 struct vcdProfile_s;
 void    max7456HardwareReset(void);
 struct max7456Config_s;
 void    max7456PreInit(const struct max7456Config_s *max7456Config);
 max7456InitStatus_e max7456Init(const struct max7456Config_s *max7456Config, const struct vcdProfile_s *vcdProfile, bool cpuOverclock);
-void    max7456Invert(bool invert);
-void    max7456Brightness(uint8_t black, uint8_t white);
 bool    max7456ReInitIfRequired(bool forceStallCheck);
 bool     max7456DrawScreen(void);
-bool    max7456WriteNvm(uint8_t char_address, const uint8_t *font_data);
 uint8_t max7456GetRowsCount(void);
 void    max7456Write(uint8_t x, uint8_t y, const char *buff);
 void    max7456WriteChar(uint8_t x, uint8_t y, uint8_t c);
@@ -62,5 +62,5 @@ bool    max7456BuffersSynced(void);
 bool    max7456LayerSupported(displayPortLayer_e layer);
 bool    max7456LayerSelect(displayPortLayer_e layer);
 bool    max7456LayerCopy(displayPortLayer_e destLayer, displayPortLayer_e sourceLayer);
-bool    max7456IsDeviceDetected(void);
+void max7456ClearShadowBuffer(void);
 void    max7456SetBackgroundType(displayPortBackground_e backgroundType);
