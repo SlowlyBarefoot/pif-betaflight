@@ -59,7 +59,6 @@
 #include "flight/pid.h"
 
 #include "io/asyncfatfs/asyncfatfs.h"
-#include "io/beeper.h"
 #include "io/dashboard.h"
 #include "io/gps.h"
 #include "io/ledstrip.h"
@@ -365,10 +364,6 @@ task_attribute_t task_attributes[TASK_COUNT] = {
     [TASK_RX] = DEFINE_TASK("RX", NULL, rxUpdateCheck, taskUpdateRxMain, TM_PERIOD, TASK_PERIOD_HZ(33), TASK_PRIORITY_HIGH), // If event-based scheduling doesn't work, fallback to periodic scheduling
     [TASK_DISPATCH] = DEFINE_TASK("DISPATCH", NULL, NULL, dispatchProcess, TM_PERIOD, TASK_PERIOD_HZ(1000), TASK_PRIORITY_HIGH),
 
-#ifdef USE_BEEPER
-    [TASK_BEEPER] = DEFINE_TASK("BEEPER", NULL, NULL, beeperUpdate, TM_PERIOD, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
-#endif
-
 #ifdef USE_GPS
     [TASK_GPS] = DEFINE_TASK("GPS", NULL, NULL, gpsUpdate, TM_PERIOD, TASK_PERIOD_HZ(TASK_GPS_RATE), TASK_PRIORITY_MEDIUM), // Required to prevent buffer overruns if running at 115200 baud (115 bytes / period < 256 bytes buffer)
 #endif
@@ -513,10 +508,6 @@ void tasksInit(void)
     setTaskEnabled(TASK_RX, true);
 
     setTaskEnabled(TASK_DISPATCH, dispatchIsEnabled());
-
-#ifdef USE_BEEPER
-    setTaskEnabled(TASK_BEEPER, true);
-#endif
 
 #ifdef USE_GPS
     setTaskEnabled(TASK_GPS, featureIsEnabled(FEATURE_GPS));

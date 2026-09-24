@@ -28,7 +28,7 @@
 
 // Number of PifTask slots the task manager is created with. Every Betaflight
 // task takes one (scheduler.c registers the whole table), TASK_COUNT in
-// scheduler.h reaches 34 with every feature compiled in, and PIF modules bring
+// scheduler.h reaches 33 with every feature compiled in, and PIF modules bring
 // tasks of their own, so this leaves room above that. A task that finds no slot
 // is simply not registered - pifTaskManager_Add() returns NULL - and shows up
 // as disabled in the CLI, so the headroom matters more than the bytes.

@@ -250,7 +250,6 @@ void beeper(beeperMode_e) {}
 void beeperSilence(void) {}
 void beeperConfirmationBeeps(uint8_t) {}
 void beeperWarningBeeps(uint8_t) {}
-uint32_t beeperUpdate(PifTask *) { return 0; }
 uint32_t getArmingBeepTimeMicros(void) {return 0;}
 beeperMode_e beeperModeForTableIndex(int) {return BEEPER_SILENCE;}
 uint32_t beeperModeMaskForTableIndex(int idx) {UNUSED(idx); return 0;}

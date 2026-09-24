@@ -583,6 +583,7 @@ void init(void)
 
 #ifdef USE_BEEPER
     beeperInit(beeperDevConfig());
+    beeperBuzzerInit();
 #endif
 /* temp until PGs are implemented. */
 #if defined(USE_INVERTER) && !defined(SIMULATOR_BUILD)
