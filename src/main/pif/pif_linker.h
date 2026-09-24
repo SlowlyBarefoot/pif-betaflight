@@ -58,6 +58,8 @@
 //                       first use rather than in pifLinker_Init())
 //   SPI_PIF_DEVICE_COUNT x (8 + sizeof(PifSpiDevice)) per SPI bus a PIF
 //                       driver uses (drivers/bus_spi_pif.c, likewise)
+//   12 x sizeof(uint16_t) for the PPM channel buffer when the receiver is
+//                       PPM (drivers/rx/rx_pwm.c, allocated in ppmRxInit())
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take
