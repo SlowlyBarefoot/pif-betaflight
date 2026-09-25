@@ -26,34 +26,8 @@
 
 #include "msp/msp.h"
 
-// Each MSP port requires state and a receive buffer, revisit this default if someone needs more than 3 MSP ports.
+// Each MSP port requires state, a receive buffer and an answer buffer (msp_serial.c), revisit this default if someone needs more than 3 MSP ports.
 #define MAX_MSP_PORT_COUNT 3
-
-typedef enum {
-    MSP_IDLE,
-    MSP_HEADER_START,
-    MSP_HEADER_M,
-    MSP_HEADER_X,
-
-    MSP_HEADER_V1,
-    MSP_PAYLOAD_V1,
-    MSP_CHECKSUM_V1,
-
-    MSP_HEADER_V2_OVER_V1,
-    MSP_PAYLOAD_V2_OVER_V1,
-    MSP_CHECKSUM_V2_OVER_V1,
-
-    MSP_HEADER_V2_NATIVE,
-    MSP_PAYLOAD_V2_NATIVE,
-    MSP_CHECKSUM_V2_NATIVE,
-
-    MSP_COMMAND_RECEIVED
-} mspState_e;
-
-typedef enum {
-    MSP_PACKET_COMMAND,
-    MSP_PACKET_REPLY
-} mspPacketType_e;
 
 typedef enum {
     MSP_EVALUATE_NON_MSP_DATA,
@@ -81,42 +55,6 @@ typedef enum {
 #else
 #define MSP_PORT_OUTBUF_SIZE MSP_PORT_OUTBUF_SIZE_MIN // As of 2021/08/10 MSP_BOXNAMES generates a 307 byte response for page 1.
 #endif
-
-typedef struct __attribute__((packed)) {
-    uint8_t size;
-    uint8_t cmd;
-} mspHeaderV1_t;
-
-typedef struct __attribute__((packed)) {
-    uint16_t size;
-} mspHeaderJUMBO_t;
-
-typedef struct __attribute__((packed)) {
-    uint8_t  flags;
-    uint16_t cmd;
-    uint16_t size;
-} mspHeaderV2_t;
-
-#define MSP_MAX_HEADER_SIZE     9
-
-struct serialPort_s;
-typedef struct mspPort_s {
-    struct serialPort_s *port; // null when port unused.
-    timeMs_t lastActivityMs;
-    mspPendingSystemRequest_e pendingRequest;
-    mspState_e c_state;
-    mspPacketType_e packetType;
-    uint8_t inBuf[MSP_PORT_INBUF_SIZE];
-    uint16_t cmdMSP;
-    uint8_t cmdFlags;
-    mspVersion_e mspVersion;
-    uint_fast16_t offset;
-    uint_fast16_t dataSize;
-    uint8_t checksum1;
-    uint8_t checksum2;
-    bool sharedWithTelemetry;
-    mspDescriptor_t descriptor;
-} mspPort_t;
 
 void mspSerialInit(void);
 bool mspSerialWaiting(void);

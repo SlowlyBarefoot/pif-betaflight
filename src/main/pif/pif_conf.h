@@ -86,6 +86,20 @@
 #define PIF_GPS_UBLOX_TX_SIZE				128
 
 
+// -------- pifMsp -------------------------------
+
+// No buffers from the PIF heap: msp/msp_serial.c gives every PifMspV2 its
+// own receive buffer (mspPort_t.inBuf) and answer buffer (in CCM) when the
+// port is allocated, since the answer buffer has to hold a 4 KB dataflash
+// read frame.
+#define PIF_MSP_RX_PACKET_SIZE				0
+#define PIF_MSP_TX_ANSWER_SIZE				0
+
+// No receive timeout, as before: a PifTimer per MSP port for something
+// Betaflight never did. A broken frame still ends at its checksum.
+#define PIF_MSP_RECEIVE_TIMEOUT				0
+
+
 // -------- pifTimer -----------------------------
 
 //#define PIF_PWM_MAX_DUTY					1000

@@ -72,6 +72,10 @@
 //                       (io/gps.c, allocated in gpsInit()). Its PifUart has
 //                       no buffers but takes 1 of the PIF_TASK_SIZE task
 //                       slots for its TX task.
+//   Nothing for the PifMspV2 of each MSP port (msp/msp_serial.c): its receive
+//                       and answer buffers are static, it has no PifUart and
+//                       no task, and PIF_MSP_RECEIVE_TIMEOUT is 0, so no
+//                       PifTimer either.
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take

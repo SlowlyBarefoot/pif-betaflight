@@ -17,8 +17,9 @@
 # pif_rc and pif_rc_ppm for the PPM receiver input, pif_ring_buffer and
 # pif_uart for the hardware UART driver, pif_rc_ibus with them for the iBUS
 # receiver and telemetry, pif_buzzer for the beeper, and pif_bmi270 and
-# pif_bmi270_spi for the BMI270 gyro and accelerometer, and pif_gps and
-# pif_gps_ublox for the NMEA and UBX GPS parsers. pif_log.c is left out
+# pif_bmi270_spi for the BMI270 gyro and accelerometer, pif_gps and
+# pif_gps_ublox for the NMEA and UBX GPS parsers, and pif_msp and pif_msp_v2
+# for the MSP serial ports. pif_log.c is left out
 # because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -34,7 +35,7 @@ INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(PIF_DIR)/include \
                    $(ROOT)/src/main/pif
 
-VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/osd:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/gps:$(ROOT)/src/main/pif
+VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/osd:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/gps:$(PIF_DIR)/source/protocol:$(ROOT)/src/main/pif
 
 PIF_SRC = \
             pif.c \
@@ -61,6 +62,8 @@ PIF_SRC = \
             pif_buzzer.c \
             pif_gps.c \
             pif_gps_ublox.c \
+            pif_msp.c \
+            pif_msp_v2.c \
             pif_linker.c
 
 SRC += $(PIF_SRC)
