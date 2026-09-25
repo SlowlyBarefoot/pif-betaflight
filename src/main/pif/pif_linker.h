@@ -60,10 +60,6 @@
 //                       driver uses (drivers/bus_spi_pif.c, likewise)
 //   12 x sizeof(uint16_t) for the PPM channel buffer when the receiver is
 //                       PPM (drivers/rx/rx_pwm.c, allocated in ppmRxInit())
-//   2 x sizeof(PifRingBuffer) per open serial port with a PifUart in front
-//                       (drivers/serial_pif.c: iBUS receiver and telemetry;
-//                       the buffers themselves are static). Each such port
-//                       also takes up to 2 of the PIF_TASK_SIZE task slots.
 //   2 x sizeof(PifRingBuffer) per hardware UART, for the PifUart that holds
 //                       its RX and TX buffers (drivers/serial_uart.c, allocated
 //                       on the first open of the UART and kept; the buffers

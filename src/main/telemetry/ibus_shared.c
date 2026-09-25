@@ -407,9 +407,11 @@ static bool theAddressIsWithinOurRange(ibusAddress_t returnAddress)
     telemetryConfig()->flysky_sensors[(returnAddress - ibusBaseAddress)] != IBUS_SENSOR_TYPE_NONE;
 }
 
-// Called by pif_rc_ibus for every sensor request it receives, from the PifUart
-// RX task of the port. pif_rc_ibus frames the reply and sends it; this decides
-// whether the address is one of ours and supplies the sensor.
+// Called by pif_rc_ibus from pifRcIbus_SendTelemetry(), which the receiver
+// calls in its frame status check and the telemetry port in
+// handleIbusTelemetry(), so never from an ISR. pif_rc_ibus frames the reply and
+// sends it; this decides whether the address is one of ours and supplies the
+// sensor.
 BOOL respondToIbusRequest(PifRcIbus *ibus, uint8_t command, uint8_t address, PifRcIbusSensorinfo *sensor)
 {
     UNUSED(ibus);
