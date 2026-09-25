@@ -71,6 +71,11 @@
 //                       sizeof(PifRingBuffer) is 28 bytes, about 80 bytes per
 //                       UART with the allocator overhead, so up to 480 bytes
 //                       with all six F4 UARTs in use. No tasks.
+//   PIF_GPS_UBLOX_TX_SIZE (128) bytes for the transmit ring buffer of the
+//                       u-blox GPS driver when the GPS provider is UBLOX
+//                       (io/gps.c, allocated in gpsInit()). Its PifUart has
+//                       no buffers but takes 1 of the PIF_TASK_SIZE task
+//                       slots for its TX task.
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take

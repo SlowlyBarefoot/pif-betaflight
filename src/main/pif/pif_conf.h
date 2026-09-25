@@ -73,6 +73,19 @@
 //#define PIF_TASK_MAX_SKIP					10
 
 
+// -------- pifGps -------------------------------
+
+// UBX payload bytes a received packet may carry. The largest one io/gps.c
+// reads is NAV-SAT, 8 + 12 bytes per satellite, and a M9N reports up to 42.
+// The PifGpsUblox holds one packet of this size.
+#define PIF_GPS_UBLOX_RX_PAYLOAD_SIZE		(8 + 12 * 42)
+
+// Transmit ring buffer of the PifGpsUblox, from the PIF heap. The largest
+// message io/gps.c sends is CFG-GNSS with 7 config blocks: 60 bytes of
+// payload, 8 of framing and 4 of queue header.
+#define PIF_GPS_UBLOX_TX_SIZE				128
+
+
 // -------- pifTimer -----------------------------
 
 //#define PIF_PWM_MAX_DUTY					1000

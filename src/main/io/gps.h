@@ -133,9 +133,7 @@ typedef struct gpsData_s {
     uint8_t state;                  // GPS thread state. Used for detecting cable disconnects and configuring attached devices
     uint8_t baudrateIndex;          // index into auto-detecting or current baudrate
 
-    uint8_t ackWaitingMsgId;        // Message id when waiting for ACK
-    uint8_t ackTimeoutCounter;      // Ack timeout counter
-    ubloxAckState_e ackState;
+    ubloxAckState_e ackState;       // Of the UBX configuration message sent by the current state_position
     bool ubloxUsePVT;
     bool ubloxUseSAT;
 } gpsData_t;
