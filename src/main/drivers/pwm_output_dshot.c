@@ -161,11 +161,10 @@ static void pwmDshotSetDirectionInput(
 
 void pwmCompleteDshotMotorUpdate(void)
 {
-    /* If there is a dshot command loaded up, time it correctly with motor update*/
-    if (!dshotCommandQueueEmpty()) {
-        if (!dshotCommandOutputIsEnabled(dshotPwmDevice.count)) {
-            return;
-        }
+    // Builds the frames and loads them through pwmWriteDshotFrames(), unless
+    // a queued command holds the output for this update.
+    if (!pifDshot_Update(&dshotPif)) {
+        return;
     }
 
     for (int i = 0; i < dmaMotorTimerCount; i++) {

@@ -28,7 +28,7 @@
 
 #ifdef USE_DSHOT
 
-#include "build/atomic.h"
+#include "build/debug.h"
 
 #include "common/maths.h"
 #include "common/time.h"
@@ -40,7 +40,7 @@
 
 #include "drivers/dshot_dpwm.h" // for motorDmaOutput_t, should be gone
 #include "drivers/dshot_command.h"
-#include "drivers/nvic.h"
+#include "drivers/time.h"
 #include "drivers/pwm_output.h" // for PWM_TYPE_* and others
 
 #include "fc/rc_controls.h" // for flight3DConfig_t
@@ -103,32 +103,38 @@ uint16_t dshotConvertToExternal(float motorValue)
     return lrintf(externalValue);
 }
 
-FAST_CODE uint16_t prepareDshotPacket(dshotProtocolControl_t *pcb)
+FAST_DATA_ZERO_INIT PifDshot dshotPif;
+
+STATIC_ASSERT(MAX_SUPPORTED_MOTORS <= PIF_DSHOT_MAX_MOTORS, pifDshotMotorCount);
+STATIC_ASSERT(ALL_MOTORS == PIF_DSHOT_ALL_MOTORS, pifDshotAllMotors);
+
+// Default to an 8 kHz (125 us) loop until the PID loop is initialised, so
+// that a command queued before it still gets sensible delays.
+static uint32_t dshotPidLoopTimeUs = 125;
+
+void dshotSetPidLoopTime(uint32_t pidLoopTime)
 {
-    uint16_t packet;
-
-    ATOMIC_BLOCK(NVIC_PRIO_DSHOT_DMA) {
-        packet = (pcb->value << 1) | (pcb->requestTelemetry ? 1 : 0);
-        pcb->requestTelemetry = false;    // reset telemetry request to make sure it's triggered only once in a row
+    // readEEPROM() runs pidInit() through activateConfig() before the gyro
+    // is initialised, with a loop time of 0. Kept out, or dshotPifInit()
+    // would refuse it and leave the board without motors.
+    if (!pidLoopTime) {
+        return;
     }
 
-    // compute checksum
-    unsigned csum = 0;
-    unsigned csum_data = packet;
-    for (int i = 0; i < 3; i++) {
-        csum ^=  csum_data;   // xor data by nibbles
-        csum_data >>= 4;
-    }
-    // append checksum
-#ifdef USE_DSHOT_TELEMETRY
-    if (useDshotTelemetry) {
-        csum = ~csum;
-    }
-#endif
-    csum &= 0xf;
-    packet = (packet << 4) | csum;
+    dshotPidLoopTimeUs = pidLoopTime;
+    pifDshot_SetCyclePeriod(&dshotPif, pidLoopTime);
+}
 
-    return packet;
+bool dshotPifInit(uint8_t motorCount, bool bidirectional, PifActDshotWrite actWrite)
+{
+    return pifDshot_Init(&dshotPif, PIF_ID_AUTO, motorCount, bidirectional, dshotPidLoopTimeUs, actWrite);
+}
+
+void dshotRequestTelemetry(uint8_t motorIndex)
+{
+    if (motorIndex < dshotPif._motor_count) {
+        dshotPif._motor[motorIndex].request_telemetry = true;
+    }
 }
 
 #ifdef USE_DSHOT_TELEMETRY
@@ -137,6 +143,36 @@ FAST_DATA_ZERO_INIT dshotTelemetryState_t dshotTelemetryState;
 uint16_t getDshotTelemetry(uint8_t index)
 {
     return dshotTelemetryState.motorState[index].telemetryValue;
+}
+
+bool dshotTelemetryReceive(uint8_t motorIndex, uint32_t gcr)
+{
+    if (gcr == PIF_DSHOT_GCR_NONE) {
+        // An ESC too busy to answer is not an error in the answer.
+        return false;
+    }
+
+    dshotTelemetryState.readCount++;
+
+    const bool valid = pifDshot_PutGcr(&dshotPif, motorIndex, gcr);
+    if (valid) {
+        // Kept in units of 100 eRPM, which is what the RPM filter, the OSD
+        // and MSP read.
+        const uint16_t value = (dshotPif._motor[motorIndex]._erpm + 50) / 100;
+        dshotTelemetryState.motorState[motorIndex].telemetryValue = value;
+        dshotTelemetryState.motorState[motorIndex].telemetryActive = true;
+        if (motorIndex < 4) {
+            DEBUG_SET(DEBUG_DSHOT_RPM_TELEMETRY, motorIndex, value);
+        }
+    } else {
+        dshotTelemetryState.invalidPacketCount++;
+    }
+
+#ifdef USE_DSHOT_TELEMETRY_STATS
+    updateDshotTelemetryQuality(&dshotTelemetryQuality[motorIndex], valid, millis());
+#endif
+
+    return valid;
 }
 
 #endif

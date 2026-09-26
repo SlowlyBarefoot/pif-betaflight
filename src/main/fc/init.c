@@ -687,6 +687,7 @@ void init(void)
 
 #ifdef USE_ADC
     adcInit(adcConfig());
+    adcPifInit();
 #endif
 
     initBoardAlignment(boardAlignment());

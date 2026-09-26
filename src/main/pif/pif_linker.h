@@ -76,6 +76,13 @@
 //                       and answer buffers are static, it has no PifUart and
 //                       no task, and PIF_MSP_RECEIVE_TIMEOUT is 0, so no
 //                       PifTimer either.
+//   Nothing for the PifDshot of the motor output (drivers/dshot.c), the two
+//                       PifAdc of the ADC (drivers/adc.c, sensors/adcinternal.c)
+//                       or the PifFlash of a config save (config/config_streamer.c):
+//                       they are static or on the stack, keep their motors,
+//                       channels and command queue in fixed arrays, and are
+//                       driven from existing tasks, so they take no heap, no
+//                       task and no timer.
 //
 // sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
 // PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take

@@ -40,7 +40,6 @@
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
 
-#include "sensors/adcinternal.h"
 #include "sensors/battery.h"
 #include "sensors/esc_sensor.h"
 
@@ -155,11 +154,11 @@ static const uint8_t voltageMeterAdcChannelMap[] = {
 #endif
 };
 
-STATIC_UNIT_TESTED uint16_t voltageAdcToVoltage(const uint16_t src, const voltageSensorADCConfig_t *config)
+STATIC_UNIT_TESTED uint16_t voltageAdcToVoltage(const uint16_t millivolts, const voltageSensorADCConfig_t *config)
 {
-    // calculate battery voltage based on ADC reading
-    // result is Vbatt in 0.01V steps. 3.3V = ADC Vref, 0xFFF = 12bit adc, 110 = 10:1 voltage divider (10k:1k) * 100 for 0.01V
-    return ((((uint32_t)src * config->vbatscale * getVrefMv() / 10 + (0xFFF * 5)) / (0xFFF * config->vbatresdivval)) / config->vbatresdivmultiplier);
+    // calculate battery voltage based on the voltage at the ADC pin
+    // result is Vbatt in 0.01V steps. 110 = 10:1 voltage divider (10k:1k) * 100 for 0.01V
+    return (((uint32_t)millivolts * config->vbatscale + 50) / (10 * config->vbatresdivval)) / config->vbatresdivmultiplier;
 }
 
 void voltageMeterADCRefresh(void)
@@ -172,16 +171,16 @@ void voltageMeterADCRefresh(void)
         const voltageSensorADCConfig_t *config = voltageSensorADCConfig(i);
 
         uint8_t channel = voltageMeterAdcChannelMap[i];
-        uint16_t rawSample = adcGetChannel(channel);
-        uint16_t filteredDisplaySample = pt1FilterApply(&state->displayFilter, rawSample);
+        uint16_t millivoltSample = adcGetMilliVolt(channel);
+        uint16_t filteredDisplaySample = pt1FilterApply(&state->displayFilter, millivoltSample);
 
         // always calculate the latest voltage, see getLatestVoltage() which does the calculation on demand.
         state->voltageDisplayFiltered = voltageAdcToVoltage(filteredDisplaySample, config);
-        state->voltageUnfiltered = voltageAdcToVoltage(rawSample, config);
+        state->voltageUnfiltered = voltageAdcToVoltage(millivoltSample, config);
 
 #if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
         if (isSagCompensationConfigured()) {
-            uint16_t filteredSagSample = pt1FilterApply(&state->sagFilter, rawSample);
+            uint16_t filteredSagSample = pt1FilterApply(&state->sagFilter, millivoltSample);
             state->voltageSagFiltered = voltageAdcToVoltage(filteredSagSample, config);
         }
 #endif

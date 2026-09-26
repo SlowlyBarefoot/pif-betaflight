@@ -130,68 +130,18 @@ static FAST_DATA_ZERO_INIT timeUs_t lastSendUs;
 
 static motorPwmProtocolTypes_e motorPwmProtocol;
 
-// DMA GPIO output buffer formatting
+// DMA GPIO output buffer formatting is PIF's (pifDshot_InitBitbangBuffer(),
+// pifDshot_ClearBitbangBuffer() and pifDshot_LoadBitbangBuffer()), which lay
+// the buffer out as MOTOR_DSHOT_BUF_LENGTH entries: 3 per bit and a hold bit.
+STATIC_ASSERT(MOTOR_DSHOT_BUF_LENGTH == PIF_DSHOT_BITBANG_BUFFER_SIZE, bbBufferLayout);
 
-static void bbOutputDataInit(uint32_t *buffer, uint16_t portMask, bool inverted)
+static bool bbInverted(void)
 {
-    uint32_t resetMask;
-    uint32_t setMask;
-
-    if (inverted) {
-        resetMask = portMask;
-        setMask = (portMask << 16);
-    } else {
-        resetMask = (portMask << 16);
-        setMask = portMask;
-    }
-
-    int symbol_index;
-
-    for (symbol_index = 0; symbol_index < MOTOR_DSHOT_FRAME_BITS; symbol_index++) {
-        buffer[symbol_index * MOTOR_DSHOT_STATE_PER_SYMBOL + 0] |= setMask ; // Always set all ports
-        buffer[symbol_index * MOTOR_DSHOT_STATE_PER_SYMBOL + 1] = 0;          // Reset bits are port dependent
-        buffer[symbol_index * MOTOR_DSHOT_STATE_PER_SYMBOL + 2] |= resetMask; // Always reset all ports
-    }
-
-    //
-    // output one more 'bit' that keeps the line level at idle to allow the ESC to sample the last bit
-    //
-    // Avoid CRC errors in the case of bi-directional d-shot.  CRC errors can occur if the output is
-    // transitioned to an input before the signal has been sampled by the ESC as the sampled voltage
-    // may be somewhere between logic-high and logic-low depending on how the motor output line is
-    // driven or floating.  On some MCUs it's observed that the voltage momentarily drops low on transition
-    // to input.
-
-    int hold_bit_index = MOTOR_DSHOT_FRAME_BITS * MOTOR_DSHOT_STATE_PER_SYMBOL;
-    buffer[hold_bit_index + 0] |= resetMask; // Always reset all ports
-    buffer[hold_bit_index + 1] = 0;          // Never any change
-    buffer[hold_bit_index + 2] = 0;          // Never any change
-}
-
-static void bbOutputDataSet(uint32_t *buffer, int pinNumber, uint16_t value, bool inverted)
-{
-    uint32_t middleBit;
-
-    if (inverted) {
-        middleBit = (1 << (pinNumber + 0));
-    } else {
-        middleBit = (1 << (pinNumber + 16));
-    }
-
-    for (int pos = 0; pos < 16; pos++) {
-        if (!(value & 0x8000)) {
-            buffer[pos * 3 + 1] |= middleBit;
-        }
-        value <<= 1;
-    }
-}
-
-static void bbOutputDataClear(uint32_t *buffer)
-{
-    // Middle position to no change
-    for (int bitpos = 0; bitpos < 16; bitpos++) {
-        buffer[bitpos * 3 + 1] = 0;
-    }
+#ifdef USE_DSHOT_TELEMETRY
+    return useDshotTelemetry;
+#else
+    return false;
+#endif
 }
 
 // bbPacer management
@@ -477,14 +427,7 @@ static bool bbMotorConfig(IO_t io, uint8_t motorIndex, motorPwmProtocolTypes_e p
 
     bbGpioSetup(&bbMotors[motorIndex]);
 
-#ifdef USE_DSHOT_TELEMETRY
-    if (useDshotTelemetry) {
-        bbOutputDataInit(bbPort->portOutputBuffer, (1 << pinIndex), DSHOT_BITBANG_INVERTED);
-    } else
-#endif
-    {
-        bbOutputDataInit(bbPort->portOutputBuffer, (1 << pinIndex), DSHOT_BITBANG_NONINVERTED);
-    }
+    pifDshot_InitBitbangBuffer(bbPort->portOutputBuffer, 1 << pinIndex, 1 << (pinIndex + 16), bbInverted());
 
     bbSwitchToOutput(bbPort);
 
@@ -497,9 +440,6 @@ static bool bbUpdateStart(void)
 {
 #ifdef USE_DSHOT_TELEMETRY
     if (useDshotTelemetry) {
-#ifdef USE_DSHOT_TELEMETRY_STATS
-        const timeMs_t currentTimeMs = millis();
-#endif
         timeUs_t currentUs = micros();
         // don't send while telemetry frames might still be incoming
         if (cmpTimeUs(currentUs, lastSendUs) < (timeDelta_t)(40 + 2 * dshotFrameUs)) {
@@ -521,40 +461,20 @@ static bool bbUpdateStart(void)
             }
 #endif
 
+            const bbMotor_t *bbMotor = &bbMotors[motorIndex];
+            const uint32_t sampleCount = bbMotor->bbPort->portInputCount - bbDMA_Count(bbMotor->bbPort);
 #ifdef STM32F4
-            uint32_t value = decode_bb_bitband(
-                bbMotors[motorIndex].bbPort->portInputBuffer,
-                bbMotors[motorIndex].bbPort->portInputCount - bbDMA_Count(bbMotors[motorIndex].bbPort),
-                bbMotors[motorIndex].pinIndex);
+            const uint32_t gcr = decode_bb_bitband(bbMotor->bbPort->portInputBuffer, sampleCount, bbMotor->pinIndex);
 #else
-            uint32_t value = decode_bb(
-                bbMotors[motorIndex].bbPort->portInputBuffer,
-                bbMotors[motorIndex].bbPort->portInputCount - bbDMA_Count(bbMotors[motorIndex].bbPort),
-                bbMotors[motorIndex].pinIndex);
+            const uint32_t gcr = pifDshot_SamplesToGcr(bbMotor->bbPort->portInputBuffer, sampleCount, 1 << bbMotor->pinIndex, DSHOT_BITBANG_TELEMETRY_OVER_SAMPLE);
 #endif
-            if (value == BB_NOEDGE) {
-                continue;
-            }
-            dshotTelemetryState.readCount++;
-
-            if (value != BB_INVALID) {
-                dshotTelemetryState.motorState[motorIndex].telemetryValue = value;
-                dshotTelemetryState.motorState[motorIndex].telemetryActive = true;
-                if (motorIndex < 4) {
-                    DEBUG_SET(DEBUG_DSHOT_RPM_TELEMETRY, motorIndex, value);
-                }
-            } else {
-                dshotTelemetryState.invalidPacketCount++;
-            }
-#ifdef USE_DSHOT_TELEMETRY_STATS
-            updateDshotTelemetryQuality(&dshotTelemetryQuality[motorIndex], value != BB_INVALID, currentTimeMs);
-#endif
+            dshotTelemetryReceive(motorIndex, gcr);
         }
     }
 #endif
     for (int i = 0; i < usedMotorPorts; i++) {
         bbDMA_Cmd(&bbPorts[i], DISABLE);
-        bbOutputDataClear(bbPorts[i].portOutputBuffer);
+        pifDshot_ClearBitbangBuffer(bbPorts[i].portOutputBuffer);
     }
 
     return true;
@@ -562,38 +482,26 @@ static bool bbUpdateStart(void)
 
 static void bbWriteInt(uint8_t motorIndex, uint16_t value)
 {
-    bbMotor_t *const bbmotor = &bbMotors[motorIndex];
+    // Only noted here: the frames of every motor are built together in
+    // pifDshot_Update(), where a queued command may take the place of this.
+    pifDshot_SetThrottle(&dshotPif, motorIndex, value);
+}
 
-    if (!bbmotor->configured) {
-        return;
-    }
+// act_write of dshotPif: ORs the frame of every configured motor into the
+// output buffer of its port, which bbUpdateStart() has cleared.
+static void bbWriteFrames(PifDshot *pOwner, const uint16_t *pFrames, uint8_t count)
+{
+    UNUSED(pOwner);
 
-    // fetch requestTelemetry from motors. Needs to be refactored.
-    motorDmaOutput_t * const motor = getMotorDmaOutput(motorIndex);
-    bbmotor->protocolControl.requestTelemetry = motor->protocolControl.requestTelemetry;
-    motor->protocolControl.requestTelemetry = false;
+    for (int motorIndex = 0; motorIndex < count; motorIndex++) {
+        const bbMotor_t *const bbmotor = &bbMotors[motorIndex];
 
-    // If there is a command ready to go overwrite the value and send that instead
-    if (dshotCommandIsProcessing()) {
-        value = dshotCommandGetCurrent(motorIndex);
-        if (value) {
-            bbmotor->protocolControl.requestTelemetry = true;
+        if (!bbmotor->configured) {
+            continue;
         }
-    }
 
-    bbmotor->protocolControl.value = value;
-
-    uint16_t packet = prepareDshotPacket(&bbmotor->protocolControl);
-
-    bbPort_t *bbPort = bbmotor->bbPort;
-
-#ifdef USE_DSHOT_TELEMETRY
-    if (useDshotTelemetry) {
-        bbOutputDataSet(bbPort->portOutputBuffer, bbmotor->pinIndex, packet, DSHOT_BITBANG_INVERTED);
-    } else
-#endif
-    {
-        bbOutputDataSet(bbPort->portOutputBuffer, bbmotor->pinIndex, packet, DSHOT_BITBANG_NONINVERTED);
+        pifDshot_LoadBitbangBuffer(bbmotor->bbPort->portOutputBuffer, 1 << bbmotor->pinIndex, 1 << (bbmotor->pinIndex + 16),
+            pFrames[motorIndex], bbInverted());
     }
 }
 
@@ -604,12 +512,10 @@ static void bbWrite(uint8_t motorIndex, float value)
 
 static void bbUpdateComplete(void)
 {
-    // If there is a dshot command loaded up, time it correctly with motor update
-
-    if (!dshotCommandQueueEmpty()) {
-        if (!dshotCommandOutputIsEnabled(bbDevice.count)) {
-            return;
-        }
+    // Builds the frames and loads them through bbWriteFrames(), unless a
+    // queued command holds the output for this update.
+    if (!pifDshot_Update(&dshotPif)) {
+        return;
     }
 
 #ifdef USE_DSHOT_CACHE_MGMT
@@ -778,6 +684,13 @@ motorDevice_t *dshotBitbangDevInit(const motorDevConfig_t *motorConfig, uint8_t 
 
         // Fill in motors structure for 4way access (XXX Should be refactored)
         motors[motorIndex].io = bbMotors[motorIndex].io;
+    }
+
+    if (!dshotPifInit(motorCount, bbInverted(), bbWriteFrames)) {
+        bbDevice.vTable.write = motorWriteNull;
+        bbDevice.vTable.updateStart = motorUpdateStartNull;
+        bbDevice.vTable.updateComplete = motorUpdateCompleteNull;
+        return NULL;
     }
 
     return &bbDevice;

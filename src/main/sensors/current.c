@@ -36,7 +36,6 @@
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
 
-#include "sensors/adcinternal.h"
 #include "sensors/battery.h"
 #include "sensors/esc_sensor.h"
 
@@ -109,12 +108,11 @@ PG_RESET_TEMPLATE(currentSensorADCConfig_t, currentSensorADCConfig,
 PG_REGISTER(currentSensorVirtualConfig_t, currentSensorVirtualConfig, PG_CURRENT_SENSOR_VIRTUAL_CONFIG, 0);
 #endif
 
-static int32_t currentMeterADCToCentiamps(const uint16_t src)
+static int32_t currentMeterADCToCentiamps(const uint16_t millivolts)
 {
 
     const currentSensorADCConfig_t *config = currentSensorADCConfig();
 
-    int32_t millivolts = ((uint32_t)src * getVrefMv()) / 4096;
     // y=x/m+b m is scale in (mV/10A) and b is offset in (mA)
     int32_t centiAmps = config->scale ? (millivolts * 10000 / (int32_t)config->scale + (int32_t)config->offset) / 10 : 0;
 
@@ -147,9 +145,9 @@ void currentMeterADCInit(void)
 void currentMeterADCRefresh(int32_t lastUpdateAt)
 {
 #ifdef USE_ADC
-    const uint16_t iBatSample = adcGetChannel(ADC_CURRENT);
-    currentMeterADCState.amperageLatest = currentMeterADCToCentiamps(iBatSample);
-    currentMeterADCState.amperage = currentMeterADCToCentiamps(pt1FilterApply(&adciBatFilter, iBatSample));
+    const uint16_t iBatMillivolts = adcGetMilliVolt(ADC_CURRENT);
+    currentMeterADCState.amperageLatest = currentMeterADCToCentiamps(iBatMillivolts);
+    currentMeterADCState.amperage = currentMeterADCToCentiamps(pt1FilterApply(&adciBatFilter, iBatMillivolts));
 
     updateCurrentmAhDrawnState(&currentMeterADCState.mahDrawnState, currentMeterADCState.amperageLatest, lastUpdateAt);
 #else

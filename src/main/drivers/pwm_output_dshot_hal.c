@@ -138,8 +138,9 @@ FAST_CODE static void pwmDshotSetDirectionInput(
 
 FAST_CODE void pwmCompleteDshotMotorUpdate(void)
 {
-    /* If there is a dshot command loaded up, time it correctly with motor update*/
-    if (!dshotCommandQueueEmpty() && !dshotCommandOutputIsEnabled(dshotPwmDevice.count)) {
+    // Builds the frames and loads them through pwmWriteDshotFrames(), unless
+    // a queued command holds the output for this update.
+    if (!pifDshot_Update(&dshotPif)) {
         return;
     }
 

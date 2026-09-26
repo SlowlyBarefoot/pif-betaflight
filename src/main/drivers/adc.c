@@ -34,6 +34,8 @@
 
 #include "pg/adc.h"
 
+#include "sensor/pif_adc.h"
+
 #include "adc.h"
 
 //#define DEBUG_ADC_CHANNELS
@@ -45,6 +47,20 @@ volatile FAST_DATA_ZERO_INIT uint16_t adcValues[ADC_CHANNEL_COUNT];
 #else
 volatile uint16_t adcValues[ADC_CHANNEL_COUNT];
 #endif
+
+// Every STM32 ADC is run at 12 bits.
+#define ADC_RESOLUTION_BITS 12
+
+#ifdef ADC_VOLTAGE_REFERENCE_MV
+#define ADC_DEFAULT_VREF_MV ADC_VOLTAGE_REFERENCE_MV
+#else
+#define ADC_DEFAULT_VREF_MV 3300
+#endif
+
+STATIC_ASSERT(ADC_CHANNEL_COUNT <= PIF_ADC_MAX_CHANNELS, pifAdcChannelCount);
+
+// Until adcPifInit() it has no channels, and reads as 0.
+static PifAdc adcPif;
 
 uint8_t adcChannelByTag(ioTag_t ioTag)
 {
@@ -106,6 +122,33 @@ uint16_t adcGetChannel(uint8_t channel)
     return adcValues[adcOperatingConfig[channel].dmaIndex];
 }
 
+static uint16_t adcPifRead(PifAdc *adc, uint8_t channel)
+{
+    UNUSED(adc);
+
+    return adcValues[adcOperatingConfig[channel].dmaIndex];
+}
+
+void adcPifInit(void)
+{
+    pifAdc_Init(&adcPif, PIF_ID_AUTO, ADC_CHANNEL_COUNT, ADC_RESOLUTION_BITS, ADC_DEFAULT_VREF_MV, adcPifRead);
+}
+
+uint16_t adcGetMilliVolt(uint8_t channel)
+{
+    adcGetChannelValues();
+
+    // Converted on demand, one channel at a time: the battery voltage, the
+    // current and the RSSI are each read by a task of their own.
+    pifAdc_SampleChannel(&adcPif, channel);
+    return pifAdc_GetMilliVolt(&adcPif, channel);
+}
+
+void adcSetReferenceMv(uint16_t vrefMv)
+{
+    pifAdc_SetReference(&adcPif, vrefMv);
+}
+
 // Verify a pin designated by tag has connection to an ADC instance designated by device
 
 bool adcVerifyPin(ioTag_t tag, ADCDevice device)
@@ -135,21 +178,12 @@ bool adcVerifyPin(ioTag_t tag, ADCDevice device)
 int32_t adcVREFINTCAL;      // ADC value (12-bit) of band gap with Vref = VREFINTCAL_VREF
 int32_t adcTSCAL1;
 int32_t adcTSCAL2;
-int32_t adcTSSlopeK;
 
-uint16_t adcInternalCompensateVref(uint16_t vrefAdcValue)
+bool adcInternalSetupPif(PifAdc *adc, uint8_t vrefintChannel, uint8_t tempsensorChannel)
 {
-    // This is essentially a tuned version of
-    // __HAL_ADC_CALC_VREFANALOG_VOLTAGE(vrefAdcValue, ADC_RESOLUTION_12B);
-    return (uint16_t)((uint32_t)(adcVREFINTCAL * VREFINT_CAL_VREF) / vrefAdcValue);
-}
-
-int16_t adcInternalComputeTemperature(uint16_t tempAdcValue, uint16_t vrefValue)
-{
-    // This is essentially a tuned version of
-    // __HAL_ADC_CALC_TEMPERATURE(vrefValue, tempAdcValue, ADC_RESOLUTION_12B);
-
-    return ((((int32_t)((tempAdcValue * vrefValue) / TEMPSENSOR_CAL_VREFANALOG) - adcTSCAL1) * adcTSSlopeK) + 500) / 1000 + TEMPSENSOR_CAL1_TEMP;
+    return pifAdc_SetVrefint(adc, vrefintChannel, adcVREFINTCAL, VREFINT_CAL_VREF)
+        && pifAdc_SetTemperature(adc, tempsensorChannel, adcTSCAL1, TEMPSENSOR_CAL1_TEMP * 10,
+            adcTSCAL2, TEMPSENSOR_CAL2_TEMP * 10, TEMPSENSOR_CAL_VREFANALOG);
 }
 #endif // USE_ADC_INTERNAL
 
@@ -158,5 +192,20 @@ uint16_t adcGetChannel(uint8_t channel)
 {
     UNUSED(channel);
     return 0;
+}
+
+void adcPifInit(void)
+{
+}
+
+uint16_t adcGetMilliVolt(uint8_t channel)
+{
+    UNUSED(channel);
+    return 0;
+}
+
+void adcSetReferenceMv(uint16_t vrefMv)
+{
+    UNUSED(vrefMv);
 }
 #endif

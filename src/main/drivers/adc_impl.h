@@ -91,7 +91,6 @@ typedef struct adcDevice_s {
 extern int32_t adcVREFINTCAL;      // ADC value (12-bit) of band gap with Vref = VREFINTCAL_VREF
 extern int32_t adcTSCAL1;
 extern int32_t adcTSCAL2;
-extern int32_t adcTSSlopeK;
 #endif
 
 extern const adcDevice_t adcHardware[];

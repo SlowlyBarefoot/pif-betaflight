@@ -85,41 +85,42 @@ uint8_t getTimerIndex(TIM_TypeDef *timer)
 
 FAST_CODE void pwmWriteDshotInt(uint8_t index, uint16_t value)
 {
-    motorDmaOutput_t *const motor = &dmaMotors[index];
+    // Only noted here: the frames of every motor are built together in
+    // pifDshot_Update(), where a queued command may take the place of this.
+    pifDshot_SetThrottle(&dshotPif, index, value);
+}
 
-    if (!motor->configured) {
-        return;
-    }
+FAST_CODE void pwmWriteDshotFrames(PifDshot *pOwner, const uint16_t *pFrames, uint8_t count)
+{
+    UNUSED(pOwner);
 
-    /*If there is a command ready to go overwrite the value and send that instead*/
-    if (dshotCommandIsProcessing()) {
-        value = dshotCommandGetCurrent(index);
-        if (value) {
-            motor->protocolControl.requestTelemetry = true;
+    for (int index = 0; index < count; index++) {
+        motorDmaOutput_t *const motor = &dmaMotors[index];
+
+        if (!motor->configured) {
+            continue;
         }
-    }
 
-    motor->protocolControl.value = value;
-
-    uint16_t packet = prepareDshotPacket(&motor->protocolControl);
-    uint8_t bufferSize;
+        const uint16_t packet = pFrames[index];
+        uint8_t bufferSize;
 
 #ifdef USE_DSHOT_DMAR
-    if (useBurstDshot) {
-        bufferSize = loadDmaBuffer(&motor->timer->dmaBurstBuffer[timerLookupChannelIndex(motor->timerHardware->channel)], 4, packet);
-        motor->timer->dmaBurstLength = bufferSize * 4;
-    } else
+        if (useBurstDshot) {
+            bufferSize = loadDmaBuffer(&motor->timer->dmaBurstBuffer[timerLookupChannelIndex(motor->timerHardware->channel)], 4, packet);
+            motor->timer->dmaBurstLength = bufferSize * 4;
+        } else
 #endif
-    {
-        bufferSize = loadDmaBuffer(motor->dmaBuffer, 1, packet);
-        motor->timer->timerDmaSources |= motor->timerDmaSource;
+        {
+            bufferSize = loadDmaBuffer(motor->dmaBuffer, 1, packet);
+            motor->timer->timerDmaSources |= motor->timerDmaSource;
 #ifdef USE_FULL_LL_DRIVER
-        xLL_EX_DMA_SetDataLength(motor->dmaRef, bufferSize);
-        xLL_EX_DMA_EnableResource(motor->dmaRef);
+            xLL_EX_DMA_SetDataLength(motor->dmaRef, bufferSize);
+            xLL_EX_DMA_EnableResource(motor->dmaRef);
 #else
-        xDMA_SetCurrDataCounter(motor->dmaRef, bufferSize);
-        xDMA_Cmd(motor->dmaRef, ENABLE);
+            xDMA_SetCurrDataCounter(motor->dmaRef, bufferSize);
+            xDMA_Cmd(motor->dmaRef, ENABLE);
 #endif
+        }
     }
 }
 
@@ -129,61 +130,6 @@ FAST_CODE void pwmWriteDshotInt(uint8_t index, uint16_t value)
 void dshotEnableChannels(uint8_t motorCount);
 
 
-static uint32_t decodeTelemetryPacket(uint32_t buffer[], uint32_t count)
-{
-    uint32_t value = 0;
-    uint32_t oldValue = buffer[0];
-    int bits = 0;
-    int len;
-    for (uint32_t i = 1; i <= count; i++) {
-        if (i < count) {
-            int diff = buffer[i] - oldValue;
-            if (bits >= 21) {
-                break;
-            }
-            len = (diff + 8) / 16;
-        } else {
-            len = 21 - bits;
-        }
-
-        value <<= len;
-        value |= 1 << (len - 1);
-        oldValue = buffer[i];
-        bits += len;
-    }
-    if (bits != 21) {
-        return 0xffff;
-    }
-
-    static const uint32_t decode[32] = {
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 10, 11, 0, 13, 14, 15,
-        0, 0, 2, 3, 0, 5, 6, 7, 0, 0, 8, 1, 0, 4, 12, 0 };
-
-    uint32_t decodedValue = decode[value & 0x1f];
-    decodedValue |= decode[(value >> 5) & 0x1f] << 4;
-    decodedValue |= decode[(value >> 10) & 0x1f] << 8;
-    decodedValue |= decode[(value >> 15) & 0x1f] << 12;
-
-    uint32_t csum = decodedValue;
-    csum = csum ^ (csum >> 8); // xor bytes
-    csum = csum ^ (csum >> 4); // xor nibbles
-
-    if ((csum & 0xf) != 0xf) {
-        return 0xffff;
-    }
-    decodedValue >>= 4;
-
-    if (decodedValue == 0x0fff) {
-        return 0;
-    }
-    decodedValue = (decodedValue & 0x000001ff) << ((decodedValue & 0xfffffe00) >> 9);
-    if (!decodedValue) {
-        return 0xffff;
-    }
-    uint32_t ret = (1000000 * 60 / 100 + decodedValue / 2) / decodedValue;
-    return ret;
-}
-
 #endif
 
 #ifdef USE_DSHOT_TELEMETRY
@@ -192,9 +138,6 @@ FAST_CODE_NOINLINE bool pwmStartDshotMotorUpdate(void)
     if (!useDshotTelemetry) {
         return true;
     }
-#ifdef USE_DSHOT_TELEMETRY_STATS
-    const timeMs_t currentTimeMs = millis();
-#endif
     const timeUs_t currentUs = micros();
     for (int i = 0; i < dshotPwmDevice.count; i++) {
         timeDelta_t usSinceInput = cmpTimeUs(currentUs, inputStampUs);
@@ -214,33 +157,12 @@ FAST_CODE_NOINLINE bool pwmStartDshotMotorUpdate(void)
             TIM_DMACmd(dmaMotors[i].timerHardware->tim, dmaMotors[i].timerDmaSource, DISABLE);
 #endif
 
-            uint16_t value = 0xffff;
-
             if (edges > MIN_GCR_EDGES) {
-                dshotTelemetryState.readCount++;
-                value = decodeTelemetryPacket(dmaMotors[i].dmaBuffer, edges);
-
-#ifdef USE_DSHOT_TELEMETRY_STATS
-                bool validTelemetryPacket = false;
-#endif
-                if (value != 0xffff) {
-                    dshotTelemetryState.motorState[i].telemetryValue = value;
-                    dshotTelemetryState.motorState[i].telemetryActive = true;
-                    if (i < 4) {
-                        DEBUG_SET(DEBUG_DSHOT_RPM_TELEMETRY, i, value);
-                    }
-#ifdef USE_DSHOT_TELEMETRY_STATS
-                    validTelemetryPacket = true;
-#endif
-                } else {
-                    dshotTelemetryState.invalidPacketCount++;
-                    if (i == 0) {
-                        memcpy(dshotTelemetryState.inputBuffer, dmaMotors[i].dmaBuffer, sizeof(dshotTelemetryState.inputBuffer));
-                    }
+                // The input capture timer counts 16 ticks per telemetry bit.
+                const uint32_t gcr = pifDshot_EdgesToGcr(dmaMotors[i].dmaBuffer, edges, 16);
+                if (!dshotTelemetryReceive(i, gcr) && i == 0) {
+                    memcpy(dshotTelemetryState.inputBuffer, dmaMotors[i].dmaBuffer, sizeof(dshotTelemetryState.inputBuffer));
                 }
-#ifdef USE_DSHOT_TELEMETRY_STATS
-                updateDshotTelemetryQuality(&dshotTelemetryQuality[i], validTelemetryPacket, currentTimeMs);
-#endif
             }
         }
         pwmDshotSetDirectionOutput(&dmaMotors[i]);

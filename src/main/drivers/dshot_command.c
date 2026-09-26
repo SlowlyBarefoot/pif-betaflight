@@ -26,6 +26,7 @@
 #ifdef USE_DSHOT
 
 #include "common/time.h"
+#include "common/utils.h"
 
 #include "drivers/io.h"
 #include "drivers/motor.h"
@@ -39,118 +40,15 @@
 #include "dshot_command.h"
 
 #define DSHOT_PROTOCOL_DETECTION_DELAY_MS 3000
-#define DSHOT_INITIAL_DELAY_US 10000
-#define DSHOT_COMMAND_DELAY_US 1000
-#define DSHOT_ESCINFO_DELAY_US 12000
-#define DSHOT_BEEP_DELAY_US 100000
-#define DSHOT_MAX_COMMANDS 3
 
-typedef enum {
-    DSHOT_COMMAND_STATE_IDLEWAIT,   // waiting for motors to go idle
-    DSHOT_COMMAND_STATE_STARTDELAY, // initial delay period before a sequence of commands
-    DSHOT_COMMAND_STATE_ACTIVE,     // actively sending the command (with optional repeated output)
-    DSHOT_COMMAND_STATE_POSTDELAY   // delay period after the command has been sent
-} dshotCommandState_e;
+// Longest a blocking command may take: the 10 ms before it, 10 repeats 1 ms
+// apart and the 100 ms after a beacon come to about 120 ms, so this is only
+// hit when the motor driver never runs the queue.
+#define DSHOT_BLOCKING_TIMEOUT_MS 1000
 
-typedef struct dshotCommandControl_s {
-    dshotCommandState_e state;
-    uint32_t nextCommandCycleDelay;
-    timeUs_t delayAfterCommandUs;
-    uint8_t repeats;
-    uint8_t command[MAX_SUPPORTED_MOTORS];
-} dshotCommandControl_t;
-
-static timeUs_t dshotCommandPidLoopTimeUs = 125; // default to 8KHz (125us) loop to prevent possible div/0
-                                                 // gets set to the actual value when the PID loop is initialized
-
-// XXX Optimization opportunity here.
-// https://github.com/betaflight/betaflight/pull/8534#pullrequestreview-258947278
-// @ledvinap: queue entry is quite large - it may be better to handle empty/full queue using different mechanism (magic value for Head or Tail / explicit element count)
-// Explicit element count will make code below simpler, but care has to be taken to avoid race conditions
-
-static dshotCommandControl_t commandQueue[DSHOT_MAX_COMMANDS + 1];
-static uint8_t commandQueueHead;
-static uint8_t commandQueueTail;
-
-void dshotSetPidLoopTime(uint32_t pidLoopTime)
-{
-    dshotCommandPidLoopTimeUs = pidLoopTime;
-}
-
-static FAST_CODE bool dshotCommandQueueFull()
-{
-    return (commandQueueHead + 1) % (DSHOT_MAX_COMMANDS + 1) == commandQueueTail;
-}
-
-FAST_CODE bool dshotCommandQueueEmpty(void)
-{
-    return commandQueueHead == commandQueueTail;
-}
-
-static FAST_CODE bool isLastDshotCommand(void)
-{
-    return ((commandQueueTail + 1) % (DSHOT_MAX_COMMANDS + 1) == commandQueueHead);
-}
-
-FAST_CODE bool dshotCommandIsProcessing(void)
-{
-    if (dshotCommandQueueEmpty()) {
-        return false;
-    }
-    dshotCommandControl_t* command = &commandQueue[commandQueueTail];
-    const bool commandIsProcessing = command->state == DSHOT_COMMAND_STATE_STARTDELAY
-                                     || command->state == DSHOT_COMMAND_STATE_ACTIVE
-                                     || (command->state == DSHOT_COMMAND_STATE_POSTDELAY && !isLastDshotCommand());
-    return commandIsProcessing;
-}
-
-static FAST_CODE bool dshotCommandQueueUpdate(void)
-{
-    if (!dshotCommandQueueEmpty()) {
-        commandQueueTail = (commandQueueTail + 1) % (DSHOT_MAX_COMMANDS + 1);
-        if (!dshotCommandQueueEmpty()) {
-            // There is another command in the queue so update it so it's ready to output in
-            // sequence. It can go directly to the DSHOT_COMMAND_STATE_ACTIVE state and bypass
-            // the DSHOT_COMMAND_STATE_IDLEWAIT and DSHOT_COMMAND_STATE_STARTDELAY states.
-            dshotCommandControl_t* nextCommand = &commandQueue[commandQueueTail];
-            nextCommand->state = DSHOT_COMMAND_STATE_ACTIVE;
-            nextCommand->nextCommandCycleDelay = 0;
-            return true;
-        }
-    }
-    return false;
-}
-
-static FAST_CODE uint32_t dshotCommandCyclesFromTime(timeUs_t delayUs)
-{
-    // Find the minimum number of motor output cycles needed to
-    // provide at least delayUs time delay
-
-    return (delayUs + dshotCommandPidLoopTimeUs - 1) / dshotCommandPidLoopTimeUs;
-}
-
-static dshotCommandControl_t* addCommand()
-{
-    int newHead = (commandQueueHead + 1) % (DSHOT_MAX_COMMANDS + 1);
-    if (newHead == commandQueueTail) {
-        return NULL;
-    }
-    dshotCommandControl_t* control = &commandQueue[commandQueueHead];
-    commandQueueHead = newHead;
-    return control;
-}
-
-static bool allMotorsAreIdle(void)
-{
-    for (unsigned i = 0; i < motorDeviceCount(); i++) {
-        const motorDmaOutput_t *motor = getMotorDmaOutput(i);
-        if (motor->protocolControl.value) {
-            return false;
-        }
-    }
-
-    return true;
-}
+// The queue, its timing and the frames of a command are PIF's (pif_dshot, in
+// dshotPif). What is left here is when Betaflight allows a command at all,
+// and running a blocking one while nothing else updates the motors.
 
 bool dshotStreamingCommandsAreEnabled(void)
 {
@@ -180,145 +78,35 @@ static bool dshotCommandsAreEnabled(dshotCommandType_e commandType)
 
 void dshotCommandWrite(uint8_t index, uint8_t motorCount, uint8_t command, dshotCommandType_e commandType)
 {
-    if (!isMotorProtocolDshot() || !dshotCommandsAreEnabled(commandType) || (command > DSHOT_MAX_COMMAND) || dshotCommandQueueFull()) {
+    UNUSED(motorCount); // dshotPif knows how many motors there are
+
+    if (!isMotorProtocolDshot() || !dshotCommandsAreEnabled(commandType) || (command > DSHOT_MAX_COMMAND)) {
         return;
     }
 
-    uint8_t repeats = 1;
-    timeUs_t delayAfterCommandUs = DSHOT_COMMAND_DELAY_US;
-
-    switch (command) {
-    case DSHOT_CMD_SPIN_DIRECTION_1:
-    case DSHOT_CMD_SPIN_DIRECTION_2:
-    case DSHOT_CMD_3D_MODE_OFF:
-    case DSHOT_CMD_3D_MODE_ON:
-    case DSHOT_CMD_SAVE_SETTINGS:
-    case DSHOT_CMD_SPIN_DIRECTION_NORMAL:
-    case DSHOT_CMD_SPIN_DIRECTION_REVERSED:
-        repeats = 10;
-        break;
-    case DSHOT_CMD_BEACON1:
-    case DSHOT_CMD_BEACON2:
-    case DSHOT_CMD_BEACON3:
-    case DSHOT_CMD_BEACON4:
-    case DSHOT_CMD_BEACON5:
-        delayAfterCommandUs = DSHOT_BEEP_DELAY_US;
-        break;
-    default:
-        break;
-    }
-
     if (commandType == DSHOT_CMD_TYPE_BLOCKING) {
-        delayMicroseconds(DSHOT_INITIAL_DELAY_US - DSHOT_COMMAND_DELAY_US);
-        for (; repeats; repeats--) {
-            delayMicroseconds(DSHOT_COMMAND_DELAY_US);
+        // The motors are disabled, so the PID loop does not update them and
+        // the queue is run from here instead, one motor update per PID loop
+        // time, which is what its delays are counted in. Motors the command
+        // is not for are sent DSHOT_CMD_MOTOR_STOP, and the command waits for
+        // every motor to be at 0 before it goes.
+        pifDshot_SetThrottle(&dshotPif, PIF_DSHOT_ALL_MOTORS, DSHOT_CMD_MOTOR_STOP);
+        if (!pifDshot_Command(&dshotPif, index, command)) {
+            return;
+        }
 
+        const timeMs_t timeoutMs = millis() + DSHOT_BLOCKING_TIMEOUT_MS;
+        while (pifDshot_IsCommandBusy(&dshotPif) && cmp32(timeoutMs, millis()) > 0) {
+            delayMicroseconds(dshotPif._cycle_us);
 #ifdef USE_DSHOT_TELEMETRY
             timeUs_t timeoutUs = micros() + 1000;
             while (!motorGetVTable().updateStart() &&
                    cmpTimeUs(timeoutUs, micros()) > 0);
 #endif
-            for (uint8_t i = 0; i < motorDeviceCount(); i++) {
-                if ((i == index) || (index == ALL_MOTORS)) {
-                    motorDmaOutput_t *const motor = getMotorDmaOutput(i);
-                    motor->protocolControl.requestTelemetry = true;
-                    motorGetVTable().writeInt(i, command);
-                } else {
-                    motorGetVTable().writeInt(i, DSHOT_CMD_MOTOR_STOP);
-                }
-            }
-
             motorGetVTable().updateComplete();
         }
-        delayMicroseconds(delayAfterCommandUs);
     } else if (commandType == DSHOT_CMD_TYPE_INLINE) {
-        dshotCommandControl_t *commandControl = addCommand();
-        if (commandControl) {
-            commandControl->repeats = repeats;
-            commandControl->delayAfterCommandUs = delayAfterCommandUs;
-            for (unsigned i = 0; i < motorCount; i++) {
-                if (index == i || index == ALL_MOTORS) {
-                    commandControl->command[i] = command;
-                } else {
-                    commandControl->command[i] = DSHOT_CMD_MOTOR_STOP;
-                }
-            }
-            if (allMotorsAreIdle()) {
-                // we can skip the motors idle wait state
-                commandControl->state = DSHOT_COMMAND_STATE_STARTDELAY;
-                commandControl->nextCommandCycleDelay = dshotCommandCyclesFromTime(DSHOT_INITIAL_DELAY_US);
-            } else {
-                commandControl->state = DSHOT_COMMAND_STATE_IDLEWAIT;
-                commandControl->nextCommandCycleDelay = 0;  // will be set after idle wait completes
-            }
-        }
+        pifDshot_Command(&dshotPif, index, command);
     }
-}
-
-uint8_t dshotCommandGetCurrent(uint8_t index)
-{
-    return commandQueue[commandQueueTail].command[index];
-}
-
-// This function is used to synchronize the dshot command output timing with
-// the normal motor output timing tied to the PID loop frequency. A "true" result
-// allows the motor output to be sent, "false" means delay until next loop. So take
-// the example of a dshot command that needs to repeat 10 times at 1ms intervals.
-// If we have a 8KHz PID loop we'll end up sending the dshot command every 8th motor output.
-FAST_CODE_NOINLINE bool dshotCommandOutputIsEnabled(uint8_t motorCount)
-{
-    UNUSED(motorCount);
-
-    dshotCommandControl_t* command = &commandQueue[commandQueueTail];
-    switch (command->state) {
-    case DSHOT_COMMAND_STATE_IDLEWAIT:
-        if (allMotorsAreIdle()) {
-            command->state = DSHOT_COMMAND_STATE_STARTDELAY;
-            command->nextCommandCycleDelay = dshotCommandCyclesFromTime(DSHOT_INITIAL_DELAY_US);
-        }
-        break;
-
-    case DSHOT_COMMAND_STATE_STARTDELAY:
-        if (command->nextCommandCycleDelay) {
-            --command->nextCommandCycleDelay;
-            return false;  // Delay motor output until the start of the command sequence
-        }
-        command->state = DSHOT_COMMAND_STATE_ACTIVE;
-        command->nextCommandCycleDelay = 0;  // first iteration of the repeat happens now
-        FALLTHROUGH;
-
-    case DSHOT_COMMAND_STATE_ACTIVE:
-        if (command->nextCommandCycleDelay) {
-            --command->nextCommandCycleDelay;
-            return false;  // Delay motor output until the next command repeat
-        }
-
-        command->repeats--;
-        if (command->repeats) {
-            command->nextCommandCycleDelay = dshotCommandCyclesFromTime(DSHOT_COMMAND_DELAY_US);
-        } else {
-            command->state = DSHOT_COMMAND_STATE_POSTDELAY;
-            command->nextCommandCycleDelay = dshotCommandCyclesFromTime(command->delayAfterCommandUs);
-            if (!isLastDshotCommand() && command->nextCommandCycleDelay > 0) {
-                // Account for the 1 extra motor output loop between commands.
-                // Otherwise the inter-command delay will be DSHOT_COMMAND_DELAY_US + 1 loop.
-                command->nextCommandCycleDelay--;
-            }
-        }
-        break;
-
-    case DSHOT_COMMAND_STATE_POSTDELAY:
-        if (command->nextCommandCycleDelay) {
-            --command->nextCommandCycleDelay;
-            return false;  // Delay motor output until the end of the post-command delay
-        }
-        if (dshotCommandQueueUpdate()) {
-            // Will be true if the command queue is not empty and we
-            // want to wait for the next command to start in sequence.
-            return false;
-        }
-    }
-
-    return true;
 }
 #endif // USE_DSHOT

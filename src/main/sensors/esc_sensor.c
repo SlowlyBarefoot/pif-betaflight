@@ -322,8 +322,7 @@ uint32_t escSensorProcess(PifTask *p_task)
             escTriggerTimestamp = currentTimeMs;
 
             startEscDataRead(telemetryBuffer, TELEMETRY_FRAME_SIZE);
-            motorDmaOutput_t * const motor = getMotorDmaOutput(escSensorMotor);
-            motor->protocolControl.requestTelemetry = true;
+            dshotRequestTelemetry(escSensorMotor);
             escSensorTriggerState = ESC_SENSOR_TRIGGER_PENDING;
 
             DEBUG_SET(DEBUG_ESC_SENSOR, DEBUG_ESC_MOTOR_INDEX, escSensorMotor + 1);

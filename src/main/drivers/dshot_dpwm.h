@@ -109,7 +109,6 @@ typedef struct {
 } motorDmaTimer_t;
 
 typedef struct motorDmaOutput_s {
-    dshotProtocolControl_t protocolControl;
     ioTag_t ioTag;
     const timerHardware_t *timerHardware;
 #ifdef USE_DSHOT
@@ -157,6 +156,9 @@ typedef struct motorDmaOutput_s {
 motorDmaOutput_t *getMotorDmaOutput(uint8_t index);
 
 void pwmWriteDshotInt(uint8_t index, uint16_t value);
+// act_write of dshotPif: loads the DMA buffer of every configured motor with
+// its frame, for pwmCompleteDshotMotorUpdate() to start.
+void pwmWriteDshotFrames(PifDshot *pOwner, const uint16_t *pFrames, uint8_t count);
 bool pwmDshotMotorHardwareConfig(const timerHardware_t *timerHardware, uint8_t motorIndex, uint8_t reorderedMotorIndex, motorPwmProtocolTypes_e pwmProtocolType, uint8_t output);
 #ifdef USE_DSHOT_TELEMETRY
 bool pwmStartDshotMotorUpdate(void);

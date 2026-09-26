@@ -247,7 +247,6 @@ void adcInitCalibrationValues(void)
     adcVREFINTCAL = *(uint16_t *)VREFINT_CAL_ADDR;
     adcTSCAL1 = *TEMPSENSOR_CAL1_ADDR;
     adcTSCAL2 = *TEMPSENSOR_CAL2_ADDR;
-    adcTSSlopeK = (TEMPSENSOR_CAL2_TEMP - TEMPSENSOR_CAL1_TEMP) * 1000 / (adcTSCAL2 - adcTSCAL1);
 }
 
 // ADC conversion result DMA buffer

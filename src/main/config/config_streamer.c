@@ -22,16 +22,19 @@
 
 #include "platform.h"
 
+#include "common/utils.h"
+
 #include "drivers/system.h"
 #include "drivers/flash.h"
 
 #include "config/config_streamer.h"
 
 #if !defined(CONFIG_IN_FLASH)
+// Aligned to a program unit, since it is written a unit at a time.
 #if defined(CONFIG_IN_RAM) && defined(PERSISTENT)
-PERSISTENT uint8_t eepromData[EEPROM_SIZE];
+PERSISTENT uint8_t eepromData[EEPROM_SIZE] __attribute__((aligned(CONFIG_STREAMER_BUFFER_SIZE)));
 #else
-uint8_t eepromData[EEPROM_SIZE];
+uint8_t eepromData[EEPROM_SIZE] __attribute__((aligned(CONFIG_STREAMER_BUFFER_SIZE)));
 #endif
 #endif
 
@@ -84,53 +87,6 @@ uint8_t eepromData[EEPROM_SIZE];
 #  error "Flash page size not defined for target."
 # endif
 #endif
-
-void config_streamer_init(config_streamer_t *c)
-{
-    memset(c, 0, sizeof(*c));
-}
-
-void config_streamer_start(config_streamer_t *c, uintptr_t base, int size)
-{
-    // base must start at FLASH_PAGE_SIZE boundary when using embedded flash.
-    c->address = base;
-    c->size = size;
-    if (!c->unlocked) {
-#if defined(CONFIG_IN_RAM) || defined(CONFIG_IN_EXTERNAL_FLASH) || defined(CONFIG_IN_SDCARD)
-        // NOP
-#elif defined(CONFIG_IN_FLASH) || defined(CONFIG_IN_FILE)
-#if defined(STM32F7) || defined(STM32H7) || defined(STM32G4)
-        HAL_FLASH_Unlock();
-#else
-        FLASH_Unlock();
-#endif
-#endif
-        c->unlocked = true;
-    }
-
-#if defined(CONFIG_IN_RAM) || defined(CONFIG_IN_FILE) || defined(CONFIG_IN_EXTERNAL_FLASH)
-    // NOP
-#elif defined(CONFIG_IN_FLASH)
-#if defined(STM32F10X)
-    FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPRTERR);
-#elif defined(STM32F303)
-    FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPERR);
-#elif defined(STM32F4)
-    FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR | FLASH_FLAG_PGAERR | FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
-#elif defined(STM32F7)
-    // NOP
-#elif defined(STM32H7)
-    // NOP
-#elif defined(STM32G4)
-    // NOP
-#elif defined(UNIT_TEST) || defined(SIMULATOR_BUILD)
-    // NOP
-#else
-# error "Unsupported CPU"
-#endif
-#endif
-    c->err = 0;
-}
 
 #if defined(CONFIG_IN_RAM) || defined(CONFIG_IN_EXTERNAL_FLASH) || defined(CONFIG_IN_SDCARD)
 // No flash sector method required.
@@ -366,174 +322,244 @@ static void getFLASHSectorForEEPROM(uint32_t *bank, uint32_t *sector)
 #endif
 #endif // CONFIG_IN_FLASH
 
-// FIXME the return values are currently magic numbers
-static int write_word(config_streamer_t *c, config_streamer_buffer_align_type_t *buffer)
-{
-    if (c->err != 0) {
-        return c->err;
-    }
+// The config is written through PIF's pif_flash, which gathers the stream
+// into program units of CONFIG_STREAMER_BUFFER_SIZE bytes, erases each erase
+// unit as the stream reaches it and pads the last unit. What is left here is
+// the storage itself: unlocking and locking it, erasing a unit and programming
+// one, for each place the config can live.
+
+STATIC_ASSERT(CONFIG_STREAMER_BUFFER_SIZE <= PIF_FLASH_MAX_PROGRAM_SIZE, configStreamerProgramSize);
+
 #if defined(CONFIG_IN_EXTERNAL_FLASH)
+// Whether flashPageProgramBegin() has been called for a page that
+// flashPageProgramFinish() has not ended yet.
+static bool configPageOpen;
+#endif
 
-    uint32_t dataOffset = (uint32_t)(c->address - (uintptr_t)&eepromData[0]);
+#if defined(CONFIG_IN_RAM) || defined(CONFIG_IN_SDCARD) || defined(CONFIG_IN_FILE)
+// PifFlash addresses are 32 bits, which a pointer of the simulator is not, so
+// a region in memory is addressed from 0 and placed here.
+static uintptr_t configMemoryBase;
+#define CONFIG_MEMORY(address) (configMemoryBase + (address))
+#else
+#define CONFIG_MEMORY(address) ((uintptr_t)(address))
+#endif
 
-    const flashPartition_t *flashPartition = flashPartitionFindByType(FLASH_PARTITION_TYPE_CONFIG);
+static void configStreamerLock(PifFlash *flash, BOOL lock)
+{
+    UNUSED(flash);
+
+    if (!lock) {
+#if defined(CONFIG_IN_RAM) || defined(CONFIG_IN_SDCARD)
+        memset(eepromData, 0, sizeof(eepromData));
+#elif defined(CONFIG_IN_EXTERNAL_FLASH)
+        configPageOpen = false;
+#elif defined(CONFIG_IN_FLASH) || defined(CONFIG_IN_FILE)
+#if defined(STM32F7) || defined(STM32H7) || defined(STM32G4)
+        HAL_FLASH_Unlock();
+#else
+        FLASH_Unlock();
+#endif
+#endif
+
+#if defined(CONFIG_IN_FLASH)
+#if defined(STM32F10X)
+        FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPRTERR);
+#elif defined(STM32F303)
+        FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPERR);
+#elif defined(STM32F4)
+        FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR | FLASH_FLAG_PGAERR | FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
+#elif defined(STM32F7) || defined(STM32H7) || defined(STM32G4) || defined(UNIT_TEST) || defined(SIMULATOR_BUILD)
+        // NOP
+#else
+# error "Unsupported CPU"
+#endif
+#endif
+        return;
+    }
+
+#if defined(CONFIG_IN_SDCARD)
+    bool saveEEPROMToSDCard(void); // XXX forward declaration to avoid circular dependency between config_streamer / config_eeprom
+    saveEEPROMToSDCard();
+    // TODO overwrite the data in the file on the SD card.
+#elif defined(CONFIG_IN_EXTERNAL_FLASH)
+    flashFlush();
+    configPageOpen = false;
+#elif defined(CONFIG_IN_RAM)
+    // NOP
+#elif defined(CONFIG_IN_FILE)
+    FLASH_Lock();
+#elif defined(CONFIG_IN_FLASH)
+#if defined(STM32F7) || defined(STM32H7) || defined(STM32G4)
+    HAL_FLASH_Lock();
+#else
+    FLASH_Lock();
+#endif
+#endif
+}
+
+#if defined(CONFIG_IN_EXTERNAL_FLASH) || defined(CONFIG_IN_FLASH)
+static BOOL configStreamerErase(PifFlash *flash, uint32_t address)
+{
+    UNUSED(flash);
+
+#if defined(CONFIG_IN_EXTERNAL_FLASH)
+    // A page being programmed is ended before the chip is asked for anything else.
+    if (configPageOpen) {
+        flashPageProgramFinish();
+        configPageOpen = false;
+    }
+    flashEraseSector(address);
+    return TRUE;
+#elif defined(STM32H7)
+    FLASH_EraseInitTypeDef EraseInitStruct = {
+        .TypeErase     = FLASH_TYPEERASE_SECTORS,
+#if !(defined(STM32H7A3xx) || defined(STM32H7A3xxQ))
+        .VoltageRange  = FLASH_VOLTAGE_RANGE_3, // 2.7-3.6V
+#endif
+        .NbSectors     = 1
+    };
+    getFLASHSectorForEEPROM(address, &EraseInitStruct.Banks, &EraseInitStruct.Sector);
+    uint32_t SECTORError;
+    return HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError) == HAL_OK;
+#elif defined(STM32F7)
+    UNUSED(address);
+    FLASH_EraseInitTypeDef EraseInitStruct = {
+        .TypeErase     = FLASH_TYPEERASE_SECTORS,
+        .VoltageRange  = FLASH_VOLTAGE_RANGE_3, // 2.7-3.6V
+        .NbSectors     = 1
+    };
+    EraseInitStruct.Sector = getFLASHSectorForEEPROM();
+    uint32_t SECTORError;
+    return HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError) == HAL_OK;
+#elif defined(STM32G4)
+    FLASH_EraseInitTypeDef EraseInitStruct = {
+        .TypeErase     = FLASH_TYPEERASE_PAGES,
+        .NbPages       = 1
+    };
+    getFLASHSectorForEEPROM(address, &EraseInitStruct.Banks, &EraseInitStruct.Page);
+    uint32_t SECTORError;
+    return HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError) == HAL_OK;
+#elif defined(STM32F4)
+    UNUSED(address);
+    return FLASH_EraseSector(getFLASHSectorForEEPROM(), VoltageRange_3) == FLASH_COMPLETE; //0x08080000 to 0x080A0000
+#else // STM32F3, STM32F1
+    return FLASH_ErasePage(address) == FLASH_COMPLETE;
+#endif
+}
+#endif
+
+static BOOL configStreamerProgram(PifFlash *flash, uint32_t address, const uint8_t *data, uint16_t size)
+{
+    UNUSED(flash);
+
+#if defined(CONFIG_IN_EXTERNAL_FLASH)
     const flashGeometry_t *flashGeometry = flashGetGeometry();
 
-    uint32_t flashStartAddress = flashPartition->startSector * flashGeometry->sectorSize;
-    uint32_t flashOverflowAddress = ((flashPartition->endSector + 1) * flashGeometry->sectorSize); // +1 to sector for inclusive
-
-    uint32_t flashAddress = flashStartAddress + dataOffset;
-    if (flashAddress + CONFIG_STREAMER_BUFFER_SIZE > flashOverflowAddress) {
-        return -3; // address is past end of partition
-    }
-
-    uint32_t flashSectorSize = flashGeometry->sectorSize;
-    uint32_t flashPageSize = flashGeometry->pageSize;
-    const uint8_t *buffers[1];
-    uint32_t bufferSizes[1];
-
-    bool onPageBoundary = (flashAddress % flashPageSize == 0);
-    if (onPageBoundary) {
-
-        bool firstPage = (flashAddress == flashStartAddress);
-        if (!firstPage) {
+    if (address % flashGeometry->pageSize == 0) {
+        if (configPageOpen) {
             flashPageProgramFinish();
         }
-
-        if (flashAddress % flashSectorSize == 0) {
-            flashEraseSector(flashAddress);
-        }
-
-        flashPageProgramBegin(flashAddress, NULL);
+        flashPageProgramBegin(address, NULL);
+        configPageOpen = true;
     }
 
-    buffers[0] = (uint8_t *)buffer;
-    bufferSizes[0] = CONFIG_STREAMER_BUFFER_SIZE;
-
+    const uint8_t *buffers[1] = { data };
+    uint32_t bufferSizes[1] = { size };
     flashPageProgramContinue(buffers, bufferSizes, 1);
-
+    return TRUE;
 #elif defined(CONFIG_IN_RAM) || defined(CONFIG_IN_SDCARD)
-    if (c->address == (uintptr_t)&eepromData[0]) {
-        memset(eepromData, 0, sizeof(eepromData));
-    }
-
-    uint64_t *dest_addr = (uint64_t *)c->address;
-    uint64_t *src_addr = (uint64_t*)buffer;
-    uint8_t row_index = 4;
-    /* copy the 256 bits flash word */
-    do
-    {
-      *dest_addr++ = *src_addr++;
-    } while (--row_index != 0);
-
+    memcpy((void *)CONFIG_MEMORY(address), data, size);
+    return TRUE;
 #elif defined(CONFIG_IN_FILE)
-
-    if (c->address % FLASH_PAGE_SIZE == 0) {
-        const FLASH_Status status = FLASH_ErasePage(c->address);
-        if (status != FLASH_COMPLETE) {
-            return -1;
-        }
-    }
-    const FLASH_Status status = FLASH_ProgramWord(c->address, *buffer);
-    if (status != FLASH_COMPLETE) {
-        return -2;
-    }
-
+    UNUSED(size);
+    return FLASH_ProgramWord(CONFIG_MEMORY(address), *(const uint32_t *)data) == FLASH_COMPLETE;
 #elif defined(CONFIG_IN_FLASH)
-
+    UNUSED(size);
 #if defined(STM32H7)
-    if (c->address % FLASH_PAGE_SIZE == 0) {
-        FLASH_EraseInitTypeDef EraseInitStruct = {
-            .TypeErase     = FLASH_TYPEERASE_SECTORS,
-#if !(defined(STM32H7A3xx) || defined(STM32H7A3xxQ))
-            .VoltageRange  = FLASH_VOLTAGE_RANGE_3, // 2.7-3.6V
-#endif
-            .NbSectors     = 1
-        };
-        getFLASHSectorForEEPROM(c->address, &EraseInitStruct.Banks, &EraseInitStruct.Sector);
-        uint32_t SECTORError;
-        const HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError);
-        if (status != HAL_OK) {
-            return -1;
-        }
-    }
-
     // For H7
     // HAL_StatusTypeDef HAL_FLASH_Program(uint32_t TypeProgram, uint32_t Address, uint64_t DataAddress);
-    const HAL_StatusTypeDef status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, c->address, (uint64_t)(uint32_t)buffer);
-    if (status != HAL_OK) {
-        return -2;
-    }
+    return HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, address, (uint64_t)(uint32_t)data) == HAL_OK;
 #elif defined(STM32F7)
-    if (c->address % FLASH_PAGE_SIZE == 0) {
-        FLASH_EraseInitTypeDef EraseInitStruct = {
-            .TypeErase     = FLASH_TYPEERASE_SECTORS,
-            .VoltageRange  = FLASH_VOLTAGE_RANGE_3, // 2.7-3.6V
-            .NbSectors     = 1
-        };
-        EraseInitStruct.Sector = getFLASHSectorForEEPROM();
-        uint32_t SECTORError;
-        const HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError);
-        if (status != HAL_OK) {
-            return -1;
-        }
-    }
-
     // For F7
     // HAL_StatusTypeDef HAL_FLASH_Program(uint32_t TypeProgram, uint32_t Address, uint64_t Data);
-    const HAL_StatusTypeDef status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, c->address, (uint64_t)*buffer);
-    if (status != HAL_OK) {
-        return -2;
-    }
+    return HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, address, (uint64_t)*(const uint32_t *)data) == HAL_OK;
 #elif defined(STM32G4)
-    if (c->address % FLASH_PAGE_SIZE == 0) {
-
-        FLASH_EraseInitTypeDef EraseInitStruct = {
-            .TypeErase     = FLASH_TYPEERASE_PAGES,
-            .NbPages       = 1
-        };
-        getFLASHSectorForEEPROM(c->address, &EraseInitStruct.Banks, &EraseInitStruct.Page);
-        uint32_t SECTORError;
-        const HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError);
-        if (status != HAL_OK) {
-            return -1;
-        }
-    }
-
-    const HAL_StatusTypeDef status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, c->address, (uint64_t)*buffer);
-    if (status != HAL_OK) {
-        return -2;
-    }
+    return HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, address, *(const uint64_t *)data) == HAL_OK;
 #else // !STM32H7 && !STM32F7 && !STM32G4
-    if (c->address % FLASH_PAGE_SIZE == 0) {
-#if defined(STM32F4)
-        const FLASH_Status status = FLASH_EraseSector(getFLASHSectorForEEPROM(), VoltageRange_3); //0x08080000 to 0x080A0000
-#else // STM32F3, STM32F1
-        const FLASH_Status status = FLASH_ErasePage(c->address);
+    return FLASH_ProgramWord(address, *(const uint32_t *)data) == FLASH_COMPLETE;
 #endif
-        if (status != FLASH_COMPLETE) {
-            return -1;
-        }
+#endif
+}
+
+#if !defined(CONFIG_IN_EXTERNAL_FLASH)
+static BOOL configStreamerRead(PifFlash *flash, uint32_t address, uint8_t *data, size_t size)
+{
+    UNUSED(flash);
+
+    memcpy(data, (const void *)CONFIG_MEMORY(address), size);
+    return TRUE;
+}
+#endif
+
+void config_streamer_init(config_streamer_t *c)
+{
+    memset(c, 0, sizeof(*c));
+}
+
+void config_streamer_start(config_streamer_t *c, uintptr_t base, int size)
+{
+    bool ready;
+
+#if defined(CONFIG_IN_EXTERNAL_FLASH)
+    // The config goes to its partition of the flash chip, whatever base says.
+    UNUSED(base);
+    UNUSED(size);
+    const flashPartition_t *flashPartition = flashPartitionFindByType(FLASH_PARTITION_TYPE_CONFIG);
+    const flashGeometry_t *flashGeometry = flashGetGeometry();
+    ready = flashPartition && pifFlash_Init(&c->flash, PIF_ID_AUTO,
+        flashPartition->startSector * flashGeometry->sectorSize,
+        (flashPartition->endSector + 1 - flashPartition->startSector) * flashGeometry->sectorSize,
+        flashGeometry->sectorSize, CONFIG_STREAMER_BUFFER_SIZE, configStreamerErase, configStreamerProgram, NULL);
+#elif defined(CONFIG_IN_FLASH)
+    // base must start at FLASH_PAGE_SIZE boundary when using embedded flash.
+    ready = pifFlash_Init(&c->flash, PIF_ID_AUTO, base, size, FLASH_PAGE_SIZE, CONFIG_STREAMER_BUFFER_SIZE,
+        configStreamerErase, configStreamerProgram, configStreamerRead);
+#else
+    // RAM, an SD card image in RAM, or the simulator's file, none of which
+    // is erased before it is written.
+    configMemoryBase = base;
+    ready = pifFlash_Init(&c->flash, PIF_ID_AUTO, 0, size, 0, CONFIG_STREAMER_BUFFER_SIZE,
+        NULL, configStreamerProgram, configStreamerRead);
+#endif
+
+    if (!ready) {
+        c->err = -1;
+        return;
     }
-    const FLASH_Status status = FLASH_ProgramWord(c->address, *buffer);
-    if (status != FLASH_COMPLETE) {
-        return -2;
+
+    pifFlash_AttachActLock(&c->flash, configStreamerLock);
+    pifFlash_Begin(&c->flash);
+    c->err = 0;
+}
+
+static int configStreamerError(void)
+{
+    // FIXME the return values are currently magic numbers
+    switch (pif_error) {
+    case E_OVERFLOW_BUFFER:
+        return -3; // past end of the config region
+    case E_ACCESS_FAILED:
+        return -2; // erase or program failed
+    default:
+        return -1;
     }
-#endif
-#endif
-    c->address += CONFIG_STREAMER_BUFFER_SIZE;
-    return 0;
 }
 
 int config_streamer_write(config_streamer_t *c, const uint8_t *p, uint32_t size)
 {
-    for (const uint8_t *pat = p; pat != (uint8_t*)p + size; pat++) {
-        c->buffer.b[c->at++] = *pat;
-
-        if (c->at == sizeof(c->buffer)) {
-            c->err = write_word(c, &c->buffer.w);
-            c->at = 0;
-        }
+    if (c->err == 0 && !pifFlash_Write(&c->flash, p, size)) {
+        c->err = configStreamerError();
     }
     return c->err;
 }
@@ -545,35 +571,14 @@ int config_streamer_status(config_streamer_t *c)
 
 int config_streamer_flush(config_streamer_t *c)
 {
-    if (c->at != 0) {
-        memset(c->buffer.b + c->at, 0, sizeof(c->buffer) - c->at);
-        c->err = write_word(c, &c->buffer.w);
-        c->at = 0;
-    }
-    return c-> err;
+    // pifFlash_End() programs what is left over, padded to a whole unit.
+    return c->err;
 }
 
 int config_streamer_finish(config_streamer_t *c)
 {
-    if (c->unlocked) {
-#if defined(CONFIG_IN_SDCARD)
-        bool saveEEPROMToSDCard(void); // XXX forward declaration to avoid circular dependency between config_streamer / config_eeprom
-        saveEEPROMToSDCard();
-        // TODO overwrite the data in the file on the SD card.
-#elif defined(CONFIG_IN_EXTERNAL_FLASH)
-        flashFlush();
-#elif defined(CONFIG_IN_RAM)
-        // NOP
-#elif defined(CONFIG_IN_FILE)
-        FLASH_Lock();
-#elif defined(CONFIG_IN_FLASH)
-#if defined(STM32F7) || defined(STM32H7) || defined(STM32G4)
-        HAL_FLASH_Lock();
-#else
-        FLASH_Lock();
-#endif
-#endif
-        c->unlocked = false;
+    if (c->flash._writing && !pifFlash_End(&c->flash) && c->err == 0) {
+        c->err = configStreamerError();
     }
     return c->err;
 }

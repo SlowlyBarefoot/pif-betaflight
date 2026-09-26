@@ -179,7 +179,6 @@ typedef struct bbPort_s {
 // Per motor output
 
 typedef struct bbMotor_s {
-    dshotProtocolControl_t protocolControl;
     int pinIndex;            // pinIndex of this motor output within a group that bbPort points to
     int portIndex;
     IO_t io;                 // IO_t for this output

@@ -73,6 +73,23 @@
 //#define PIF_TASK_MAX_SKIP					10
 
 
+// -------- pifAdc -------------------------------
+// One channel per ADC_CHANNEL_COUNT, 4 on F4 and 7 on H7/G4, which
+// drivers/adc.c checks against this.
+//#define PIF_ADC_MAX_CHANNELS				8
+
+// -------- pifDshot -----------------------------
+// The largest MAX_SUPPORTED_MOTORS of any target is 12 (8 on most), which
+// drivers/dshot.c checks against this. Each motor takes 20 bytes, and 1 more
+// in each of the 4 command slots. Betaflight never queued more than 3 commands.
+#define PIF_DSHOT_MAX_MOTORS				12
+//#define PIF_DSHOT_COMMAND_QUEUE_SIZE		3
+
+// -------- pifFlash -----------------------------
+// The largest CONFIG_STREAMER_BUFFER_SIZE, the 256-bit flash word of H743/H723,
+// which config/config_streamer.c checks against this.
+//#define PIF_FLASH_MAX_PROGRAM_SIZE		32
+
 // -------- pifGps -------------------------------
 
 // UBX payload bytes a received packet may carry. The largest one io/gps.c

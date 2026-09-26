@@ -97,13 +97,26 @@ struct adcConfig_s;
 void adcInit(const struct adcConfig_s *config);
 uint16_t adcGetChannel(uint8_t channel);
 
+// The channels are also read through PIF's pif_adc, which turns a conversion
+// into millivolts against the ADC supply, so that what reads a voltage needs
+// to know neither the resolution of the ADC nor its supply. adcPifInit() sets
+// it up once adcInit() has; the supply is ADC_VOLTAGE_REFERENCE_MV or 3300 mV
+// until adcSetReferenceMv() gives it the one measured.
+void adcPifInit(void);
+uint16_t adcGetMilliVolt(uint8_t channel);
+void adcSetReferenceMv(uint16_t vrefMv);
+
 #ifdef USE_ADC_INTERNAL
 bool adcInternalIsBusy(void);
 void adcInternalStartConversion(void);
 uint16_t adcInternalReadVrefint(void);
 uint16_t adcInternalReadTempsensor(void);
-uint16_t adcInternalCompensateVref(uint16_t vrefAdcValue);
-int16_t adcInternalComputeTemperature(uint16_t tempAdcValue, uint16_t vrefValue);
+
+// Sets two channels of a pif_adc up with the factory calibration of the MCU:
+// one on the internal reference, from which the supply is measured, and one on
+// the temperature sensor, which reads in tenths of a degree.
+struct StPifAdc;
+bool adcInternalSetupPif(struct StPifAdc *adc, uint8_t vrefintChannel, uint8_t tempsensorChannel);
 #endif
 
 #if !defined(SIMULATOR_BUILD)

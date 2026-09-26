@@ -55,28 +55,12 @@ FAST_DATA_ZERO_INIT loadDmaBufferFn *loadDmaBuffer;
 
 FAST_CODE_NOINLINE uint8_t loadDmaBufferDshot(uint32_t *dmaBuffer, int stride, uint16_t packet)
 {
-    int i;
-    for (i = 0; i < 16; i++) {
-        dmaBuffer[i * stride] = (packet & 0x8000) ? MOTOR_BIT_1 : MOTOR_BIT_0;  // MSB first
-        packet <<= 1;
-    }
-    dmaBuffer[i++ * stride] = 0;
-    dmaBuffer[i++ * stride] = 0;
-
-    return DSHOT_DMA_BUFFER_SIZE;
+    return pifDshot_LoadBuffer(dmaBuffer, stride, packet, MOTOR_BIT_0, MOTOR_BIT_1);
 }
 
 FAST_CODE_NOINLINE uint8_t loadDmaBufferProshot(uint32_t *dmaBuffer, int stride, uint16_t packet)
 {
-    int i;
-    for (i = 0; i < 4; i++) {
-        dmaBuffer[i * stride] = PROSHOT_BASE_SYMBOL + ((packet & 0xF000) >> 12) * PROSHOT_BIT_WIDTH;  // Most significant nibble first
-        packet <<= 4;   // Shift 4 bits
-    }
-    dmaBuffer[i++ * stride] = 0;
-    dmaBuffer[i++ * stride] = 0;
-
-    return PROSHOT_DMA_BUFFER_SIZE;
+    return pifDshot_LoadBufferProshot(dmaBuffer, stride, packet, PROSHOT_BASE_SYMBOL, PROSHOT_BIT_WIDTH);
 }
 
 uint32_t getDshotHz(motorPwmProtocolTypes_e pwmProtocolType)
@@ -203,6 +187,17 @@ motorDevice_t *dshotPwmDevInit(const motorDevConfig_t *motorConfig, uint16_t idl
         dshotPwmDevice.vTable.updateComplete = motorUpdateCompleteNull;
 
         /* TODO: block arming and add reason system cannot arm */
+        return NULL;
+    }
+
+#ifdef USE_DSHOT_TELEMETRY
+    const bool bidirectional = useDshotTelemetry;
+#else
+    const bool bidirectional = false;
+#endif
+    if (!dshotPifInit(motorCount, bidirectional, pwmWriteDshotFrames)) {
+        dshotPwmDevice.vTable.write = motorWriteNull;
+        dshotPwmDevice.vTable.updateComplete = motorUpdateCompleteNull;
         return NULL;
     }
 

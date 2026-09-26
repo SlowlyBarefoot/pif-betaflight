@@ -20,10 +20,8 @@
 
 #if defined(USE_DSHOT) && defined(USE_DSHOT_TELEMETRY)
 
-#define BB_NOEDGE 0xfffe
-#define BB_INVALID 0xffff
-
-uint32_t decode_bb(uint16_t buffer[], uint32_t count, uint32_t mask);
+// Returns the 21-bit GCR frame of the answer on pin bit of the port samples,
+// PIF_DSHOT_GCR_NONE if there is none or PIF_DSHOT_GCR_INVALID.
 uint32_t decode_bb_bitband( uint16_t buffer[], uint32_t count, uint32_t bit);
 
 #endif

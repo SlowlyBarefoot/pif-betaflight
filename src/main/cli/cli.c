@@ -6193,13 +6193,6 @@ static void cliDshotTelemetryInfo(const char *cmdName, char *cmdline)
         cliPrintLinefeed();
 
         const int len = MAX_GCR_EDGES;
-#ifdef DEBUG_BBDECODE
-        extern uint16_t bbBuffer[134];
-        for (int i = 0; i < 134; i++) {
-            cliPrintf("%u ", (int)bbBuffer[i]);
-        }
-        cliPrintLinefeed();
-#endif
         for (int i = 0; i < len; i++) {
             cliPrintf("%u ", (int)dshotTelemetryState.inputBuffer[i]);
         }
