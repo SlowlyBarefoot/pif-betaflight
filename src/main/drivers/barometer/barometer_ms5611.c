@@ -32,15 +32,24 @@
 
 #include "drivers/bus_i2c.h"
 #include "drivers/bus_i2c_busdev.h"
+#include "drivers/bus_i2c_pif.h"
 #include "drivers/bus_spi.h"
 #include "drivers/io.h"
 #include "drivers/time.h"
 
+#include "pif/pif_linker.h"
+
+#include "sensor/pif_ms5611.h"
+
 // 10 MHz max SPI frequency
 #define MS5611_MAX_SPI_CLK_HZ 10000000
 
-// MS5611, Standard address 0x77
-#define MS5611_I2C_ADDR                 0x77
+// MS5611, Standard address 0x77, which is MS5611_I2C_ADDR(1) of pif_ms5611
+// (CSB low; GY-86 boards have it so)
+
+#ifdef USE_BARO_SPI_MS5611
+// PIF has no SPI transport for the MS5611, so on SPI the chip is still driven
+// here, through TASK_BARO and the start/read/get functions of baroDev_t.
 
 #define CMD_RESET               0x1E // ADC reset command
 #define CMD_ADC_READ            0x00 // ADC read command
@@ -62,29 +71,17 @@ static uint8_t ms5611_osr = CMD_ADC_4096;
 #define MS5611_DATA_FRAME_SIZE 3
 static DMA_DATA_ZERO_INIT uint8_t sensor_data[MS5611_DATA_FRAME_SIZE];
 
-void ms5611BusInit(const extDevice_t *dev)
+static void ms5611BusInit(const extDevice_t *dev)
 {
-#ifdef USE_BARO_SPI_MS5611
-    if (dev->bus->busType == BUS_TYPE_SPI) {
-        IOHi(dev->busType_u.spi.csnPin); // Disable
-        IOInit(dev->busType_u.spi.csnPin, OWNER_BARO_CS, 0);
-        IOConfigGPIO(dev->busType_u.spi.csnPin, IOCFG_OUT_PP);
-        spiSetClkDivisor(dev, spiCalculateDivider(MS5611_MAX_SPI_CLK_HZ));
-    }
-#else
-    UNUSED(dev);
-#endif
+    IOHi(dev->busType_u.spi.csnPin); // Disable
+    IOInit(dev->busType_u.spi.csnPin, OWNER_BARO_CS, 0);
+    IOConfigGPIO(dev->busType_u.spi.csnPin, IOCFG_OUT_PP);
+    spiSetClkDivisor(dev, spiCalculateDivider(MS5611_MAX_SPI_CLK_HZ));
 }
 
-void ms5611BusDeinit(const extDevice_t *dev)
+static void ms5611BusDeinit(const extDevice_t *dev)
 {
-#ifdef USE_BARO_SPI_MS5611
-    if (dev->bus->busType == BUS_TYPE_SPI) {
-        spiPreinitByIO(dev->busType_u.spi.csnPin);
-    }
-#else
-    UNUSED(dev);
-#endif
+    spiPreinitByIO(dev->busType_u.spi.csnPin);
 }
 
 static void ms5611Reset(const extDevice_t *dev)
@@ -224,23 +221,14 @@ STATIC_UNIT_TESTED void ms5611Calculate(int32_t *pressure, int32_t *temperature)
         *temperature = temp;
 }
 
-bool ms5611Detect(baroDev_t *baro)
+static bool ms5611SpiDetect(baroDev_t *baro)
 {
     uint8_t sig;
     int i;
-    bool defaultAddressApplied = false;
-
-    delay(10); // No idea how long the chip takes to power-up, but let's make it 10ms
 
     extDevice_t *dev = &baro->dev;
 
     ms5611BusInit(dev);
-
-    if ((dev->bus->busType == BUS_TYPE_I2C) && (dev->busType_u.i2c.address == 0)) {
-        // Default address for MS5611
-        dev->busType_u.i2c.address = MS5611_I2C_ADDR;
-        defaultAddressApplied = true;
-    }
 
     if (!busRawReadRegisterBuffer(dev, CMD_PROM_RD, &sig, 1) || sig == 0xFF) {
         goto fail;
@@ -275,10 +263,97 @@ bool ms5611Detect(baroDev_t *baro)
 fail:;
     ms5611BusDeinit(dev);
 
+    return false;
+}
+#endif // USE_BARO_SPI_MS5611
+
+#ifdef USE_BARO_MS5611
+// On I2C the chip is driven by PIF's pif_ms5611. pifMs5611_Init() resets it
+// and reads and checks the PROM coefficients. The samples are then read by a
+// PIF task of pif_ms5611's own, with 4096 times oversampling as the native
+// driver used, and handed to baro->evt_read, so TASK_BARO and the
+// start/read/get functions of baroDev_t are not used for it.
+static PifMs5611 ms5611;
+
+// Read period of the PIF task: about 33 Hz. The native driver took about
+// 34 ms a sample through TASK_BARO (10 ms for each conversion and between
+// samples, plus the 1 ms steps around them), and the two 11 ms conversions of
+// pif_ms5611 fit in this.
+#define MS5611_READ_PERIOD_MS       30
+
+static bool ms5611I2cDetect(baroDev_t *baro)
+{
+    extDevice_t *dev = &baro->dev;
+    bool defaultAddressApplied = false;
+    uint8_t sig;
+
+    // pifMs5611_Init() waits 100 ms on pif's 1 ms clock after the reset, which
+    // only advances once pifLinker_Init() has succeeded, and the samples only
+    // reach Betaflight through evt_read.
+    if (!pifLinker_IsReady() || !baro->evt_read) {
+        return false;
+    }
+
+    PifI2cPort *port = i2cPifPort(dev->bus->busType_u.i2c.device);
+    if (!port) {
+        return false;
+    }
+
+    if (dev->busType_u.i2c.address == 0) {
+        // Default address for MS5611
+        dev->busType_u.i2c.address = MS5611_I2C_ADDR(1);
+        defaultAddressApplied = true;
+    }
+
+    // Something has to answer the PROM read before the reset command goes out,
+    // as the native driver checked, so another chip at the address is left alone.
+    PifI2cDevice *probe = pifI2cPort_TemporaryDevice(port, dev->busType_u.i2c.address, NULL);
+    if (!pifI2cDevice_ReadRegBytes(probe, MS5611_REG_READ_PROM, &sig, 1) || sig == 0xFF) {
+        goto fail;
+    }
+
+    // Resets the chip and checks the PROM CRC, which fails on a BMP085 w/o XCLR line.
+    if (ms5611._p_i2c) {
+        pifMs5611_Clear(&ms5611);
+    }
+    if (!pifMs5611_Init(&ms5611, PIF_ID_AUTO, port, dev->busType_u.i2c.address, NULL)) {
+        goto fail;
+    }
+    pifMs5611_SetOverSamplingRate(&ms5611, MS5611_OSR_4096);
+
+    busDeviceRegister(dev);
+
+    if (!pifMs5611_AttachTaskForReading(&ms5611, PIF_ID_AUTO, MS5611_READ_PERIOD_MS, baro->evt_read, TRUE)) {
+        pifMs5611_Clear(&ms5611);
+        goto fail;
+    }
+
+    return true;
+
+fail:
     if (defaultAddressApplied) {
         dev->busType_u.i2c.address = 0;
     }
 
     return false;
+}
+#endif // USE_BARO_MS5611
+
+bool ms5611Detect(baroDev_t *baro)
+{
+    delay(10); // No idea how long the chip takes to power-up, but let's make it 10ms
+
+    switch (baro->dev.bus->busType) {
+#ifdef USE_BARO_MS5611
+    case BUS_TYPE_I2C:
+        return ms5611I2cDetect(baro);
+#endif
+#ifdef USE_BARO_SPI_MS5611
+    case BUS_TYPE_SPI:
+        return ms5611SpiDetect(baro);
+#endif
+    default:
+        return false;
+    }
 }
 #endif

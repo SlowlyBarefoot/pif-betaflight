@@ -84,6 +84,13 @@ uint16_t gyroSetSampleRate(gyroDev_t *gyro)
             accSampleRateHz = 833;
             break;
 #endif
+        case MPU_60x0:
+            // The MPU6050 is on I2C, where one blocking gyro read takes about 200us at 400kHz,
+            // longer than the 125us of an 8kHz loop. Its DLPF is set to the 1kHz output rate for this.
+            gyro->gyroRateKHz = GYRO_RATE_1_kHz;
+            gyroSampleRateHz = 1000;
+            accSampleRateHz = 1000;
+            break;
         default:
             gyro->gyroRateKHz = GYRO_RATE_8_kHz;
             gyroSampleRateHz = 8000;

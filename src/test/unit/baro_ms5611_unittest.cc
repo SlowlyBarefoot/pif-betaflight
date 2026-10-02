@@ -175,4 +175,14 @@ void IOInit() {
 void IORelease() {
 }
 
+// The MS5611 on I2C goes through PIF's pif_ms5611
+bool pifLinker_IsReady(void) { return false; }
+void *i2cPifPort() { return NULL; }
+void *pifI2cPort_TemporaryDevice() { return NULL; }
+uint8_t pifI2cDevice_ReadRegBytes() { return 0; }
+uint8_t pifMs5611_Init() { return 0; }
+void pifMs5611_Clear() {}
+void pifMs5611_SetOverSamplingRate() {}
+uint8_t pifMs5611_AttachTaskForReading() { return 0; }
+
 }

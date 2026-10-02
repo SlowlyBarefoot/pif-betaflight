@@ -35,6 +35,7 @@
 #include "drivers/bus.h"
 #include "drivers/bus_i2c.h"
 #include "drivers/bus_i2c_busdev.h"
+#include "drivers/bus_i2c_pif.h"
 #include "drivers/bus_spi.h"
 #include "drivers/exti.h"
 #include "drivers/io.h"
@@ -42,6 +43,10 @@
 #include "drivers/nvic.h"
 #include "drivers/sensor.h"
 #include "drivers/time.h"
+
+#include "pif/pif_linker.h"
+
+#include "sensor/pif_hmc5883.h"
 
 #include "compass.h"
 
@@ -186,6 +191,8 @@ static void hmc5883lConfigureDataReadyInterruptHandling(magDev_t* mag)
 }
 
 #ifdef USE_MAG_SPI_HMC5883
+// PIF has no SPI transport for the HMC5883, so on SPI the chip is still
+// driven here.
 static void hmc5883SpiInit(const extDevice_t *dev)
 {
     busDeviceRegister(dev);
@@ -196,9 +203,8 @@ static void hmc5883SpiInit(const extDevice_t *dev)
     IOConfigGPIO(dev->busType_u.spi.csnPin, IOCFG_OUT_PP);
     spiSetClkDivisor(dev, spiCalculateDivider(HMC5883_MAX_SPI_CLK_HZ));
 }
-#endif
 
-static bool hmc5883lRead(magDev_t *mag, int16_t *magData)
+static bool hmc5883lSpiRead(magDev_t *mag, int16_t *magData)
 {
     static uint8_t buf[6];
     static bool pendingRead = true;
@@ -221,7 +227,7 @@ static bool hmc5883lRead(magDev_t *mag, int16_t *magData)
     return true;
 }
 
-static bool hmc5883lInit(magDev_t *mag)
+static bool hmc5883lSpiInit(magDev_t *mag)
 {
 
     extDevice_t *dev = &mag->dev;
@@ -237,23 +243,11 @@ static bool hmc5883lInit(magDev_t *mag)
     return true;
 }
 
-bool hmc5883lDetect(magDev_t* mag)
+static bool hmc5883lSpiDetect(magDev_t *mag)
 {
-    extDevice_t *dev = &mag->dev;
-
     uint8_t sig = 0;
 
-#ifdef USE_MAG_SPI_HMC5883
-    if (dev->bus->busType == BUS_TYPE_SPI) {
-        hmc5883SpiInit(dev);
-    }
-#endif
-
-#ifdef USE_MAG_HMC5883
-    if (dev->bus->busType == BUS_TYPE_I2C && dev->busType_u.i2c.address == 0) {
-        dev->busType_u.i2c.address = HMC5883_MAG_I2C_ADDRESS;
-    }
-#endif
+    hmc5883SpiInit(&mag->dev);
 
     bool ack = busReadRegisterBuffer(&mag->dev, HMC58X3_REG_IDA, &sig, 1);
 
@@ -261,9 +255,109 @@ bool hmc5883lDetect(magDev_t* mag)
         return false;
     }
 
-    mag->init = hmc5883lInit;
-    mag->read = hmc5883lRead;
+    mag->init = hmc5883lSpiInit;
+    mag->read = hmc5883lSpiRead;
 
     return true;
+}
+#endif
+
+#ifdef USE_MAG_HMC5883
+// On I2C the chip is driven by PIF's pif_hmc5883. pifHmc5883_Init() runs the
+// positive and negative bias self test for a scale factor per axis, which
+// takes about 1.1 s, and leaves the chip measuring continuously. The native
+// settings, 8 samples at 15 Hz with the 1.3 Ga gain, are written back after
+// it; the scale factors are ratios, so they hold at any gain. It also
+// attaches itself as the magnetometer of the shared g_imu_sensor.
+static PifHmc5883 hmc5883;
+
+static bool hmc5883lI2cInit(magDev_t *mag)
+{
+    extDevice_t *dev = &mag->dev;
+
+    busDeviceRegister(dev);
+
+    PifI2cPort *port = i2cPifPort(dev->bus->busType_u.i2c.device);
+    if (!port) {
+        return false;
+    }
+
+    if (hmc5883._p_i2c) {
+        pifHmc5883_Clear(&hmc5883);
+    }
+    if (!pifHmc5883_Init(&hmc5883, PIF_ID_AUTO, port, NULL, &g_imu_sensor)) {
+        return false;
+    }
+
+    // Configuration Register A  -- 0 11 100 00  num samples: 8 ; output rate: 15Hz ; normal measurement mode
+    if (!pifI2cDevice_WriteRegByte(hmc5883._p_i2c, HMC5883_REG_CONFIG_A,
+            HMC5883_SAMPLES_8 | HMC5883_DATARATE_15HZ | HMC5883_MEASURE_MODE_NORMAL)) {
+        return false;
+    }
+    // Configuration Register B  -- 001 00000    configuration gain 1.3Ga
+    if (!pifHmc5883_SetGain(&hmc5883, HMC5883_GAIN_1_3GA)) {
+        return false;
+    }
+
+    delay(100);
+
+    hmc5883lConfigureDataReadyInterruptHandling(mag);
+    return true;
+}
+
+static bool hmc5883lI2cRead(magDev_t *mag, int16_t *magData)
+{
+    UNUSED(mag);
+
+    // FALSE until the chip sets DRDY, and compassUpdate() calls again 1 ms
+    // later while this returns false.
+    return pifHmc5883_ReadMag(&hmc5883, magData);
+}
+
+static bool hmc5883lI2cDetect(magDev_t *mag)
+{
+    extDevice_t *dev = &mag->dev;
+
+    // pifHmc5883_Init() waits on pif's 1 ms clock, which only advances once
+    // pifLinker_Init() has succeeded.
+    if (!pifLinker_IsReady()) {
+        return false;
+    }
+
+    bool defaultAddressApplied = false;
+    if (dev->busType_u.i2c.address == 0) {
+        dev->busType_u.i2c.address = HMC5883_MAG_I2C_ADDRESS;
+        defaultAddressApplied = true;
+    }
+
+    // pifHmc5883_Detect() probes the fixed HMC5883_I2C_ADDR.
+    PifI2cPort *port = i2cPifPort(dev->bus->busType_u.i2c.device);
+    if (dev->busType_u.i2c.address == HMC5883_I2C_ADDR && port && pifHmc5883_Detect(port, NULL)) {
+        mag->init = hmc5883lI2cInit;
+        mag->read = hmc5883lI2cRead;
+        return true;
+    }
+
+    if (defaultAddressApplied) {
+        dev->busType_u.i2c.address = 0;
+    }
+    return false;
+}
+#endif
+
+bool hmc5883lDetect(magDev_t* mag)
+{
+    switch (mag->dev.bus->busType) {
+#ifdef USE_MAG_HMC5883
+    case BUS_TYPE_I2C:
+        return hmc5883lI2cDetect(mag);
+#endif
+#ifdef USE_MAG_SPI_HMC5883
+    case BUS_TYPE_SPI:
+        return hmc5883lSpiDetect(mag);
+#endif
+    default:
+        return false;
+    }
 }
 #endif

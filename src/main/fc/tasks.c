@@ -518,9 +518,11 @@ void tasksInit(void)
 #endif
 
 #ifdef USE_BARO
-    // The DPS310 is read by a PIF task of pif_dps310's own, which hands the
-    // samples to baro.dev.evt_read, so TASK_BARO has nothing to run for it.
-    setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO) && detectedSensors[SENSOR_INDEX_BARO] != BARO_DPS310);
+    // The DPS310, and the MS5611 on I2C, are read by a PIF task of the PIF
+    // driver's own, which hands the samples to baro.dev.evt_read and leaves
+    // the start/read/get functions of baro.dev unset, so TASK_BARO has nothing
+    // to run for them.
+    setTaskEnabled(TASK_BARO, sensors(SENSOR_BARO) && baro.dev.start_up);
 #endif
 
 #if defined(USE_BARO) || defined(USE_GPS)

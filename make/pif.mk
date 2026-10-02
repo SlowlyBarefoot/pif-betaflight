@@ -17,7 +17,10 @@
 # pif_rc and pif_rc_ppm for the PPM receiver input, pif_ring_buffer and
 # pif_uart for the hardware UART driver, pif_rc_ibus with them for the iBUS
 # receiver and telemetry, pif_buzzer for the beeper, and pif_bmi270 and
-# pif_bmi270_spi for the BMI270 gyro and accelerometer, pif_gps and
+# pif_bmi270_spi for the BMI270 gyro and accelerometer, pif_mpu60x0 with
+# pif_mpu60x0_spi for the MPU6000 and pif_mpu60x0_i2c for the MPU6050 gyro
+# and accelerometer, pif_hmc5883 for the HMC5883L compass and pif_ms5611 for
+# the MS5611 barometer on I2C, pif_gps and
 # pif_gps_ublox for the NMEA and UBX GPS parsers, and pif_msp and pif_msp_v2
 # for the MSP serial ports, pif_dshot for the DShot frames, commands and
 # bidirectional telemetry, pif_adc for the ADC conversions and pif_flash for
@@ -57,6 +60,11 @@ PIF_SRC = \
             pif_dps310_spi.c \
             pif_bmi270.c \
             pif_bmi270_spi.c \
+            pif_mpu60x0.c \
+            pif_mpu60x0_spi.c \
+            pif_mpu60x0_i2c.c \
+            pif_hmc5883.c \
+            pif_ms5611.c \
             pif_max7456.c \
             pif_rc.c \
             pif_rc_ibus.c \
