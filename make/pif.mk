@@ -38,9 +38,14 @@ endif
 # which core/pif.h includes by that bare name.
 INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(PIF_DIR)/include \
+                   $(PIF_DIR)/gpl/include \
                    $(ROOT)/src/main/pif
 
-VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/osd:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/gps:$(PIF_DIR)/source/protocol:$(PIF_DIR)/source/motor:$(PIF_DIR)/source/storage:$(ROOT)/src/main/pif
+VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/protocol:$(PIF_DIR)/source/motor:$(PIF_DIR)/source/storage:$(ROOT)/src/main/pif
+
+# The GPL-3.0 modules of PIF (GPS, DShot, MAX7456, MSPv2, HMC5883, MS5611)
+# live under gpl/. Betaflight is GPL-3.0 as well, so building them is fine.
+VPATH           := $(VPATH):$(PIF_DIR)/gpl/source/sensor:$(PIF_DIR)/gpl/source/osd:$(PIF_DIR)/gpl/source/gps:$(PIF_DIR)/gpl/source/protocol:$(PIF_DIR)/gpl/source/motor
 
 PIF_SRC = \
             pif.c \
