@@ -27,7 +27,9 @@
 # writing the config to flash. common/ uses pif_math for the fast math
 # approximations, pif_pt_filter, pif_biquad_filter and pif_moving_average for
 # the filters, pif_stream_buffer for sbuf_t, pif_encoding for zigzag and
-# varints, and pif_huffman for the dataflash compression. pif_log.c is left out
+# varints, and pif_huffman for the dataflash compression. sensors/battery.c
+# uses pif_battery for presence, cell count, voltage state and remaining
+# charge. pif_log.c is left out
 # because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -92,6 +94,7 @@ PIF_SRC = \
             pif_pt_filter.c \
             pif_biquad_filter.c \
             pif_moving_average.c \
+            pif_battery.c \
             pif_linker.c
 
 SRC += $(PIF_SRC)

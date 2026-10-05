@@ -94,7 +94,6 @@ typedef enum {
 
 void batteryInit(void);
 uint32_t batteryUpdateVoltage(PifTask *p_task);
-void batteryUpdatePresence(void);
 
 batteryState_e getBatteryState(void);
 batteryState_e getVoltageState(void);

@@ -78,6 +78,11 @@
 // drivers/adc.c checks against this.
 //#define PIF_ADC_MAX_CHANNELS				8
 
+// -------- pifBattery ---------------------------
+// force_battery_cell_count goes up to 24, which sensors/battery.c hands to
+// pifBattery_SetCellCount().
+#define PIF_BATTERY_MAX_CELLS				24
+
 // -------- pifDshot -----------------------------
 // The largest MAX_SUPPORTED_MOTORS of any target is 12 (8 on most), which
 // drivers/dshot.c checks against this. Each motor takes 20 bytes, and 1 more

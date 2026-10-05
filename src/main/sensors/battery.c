@@ -49,7 +49,13 @@
 
 #include "sensors/battery.h"
 
+#include "sensor/pif_battery.h"
+
 /**
+ * Presence, cell count, voltage state and remaining charge come from PIF's pif_battery, fed with
+ * the unfiltered meter voltage. The meters (sources, display and sag filters, mAh drawn), the
+ * consumption state, LVC and the beeper stay here.
+ *
  * terminology: meter vs sensors
  *
  * voltage and current sensors are used to collect data.
@@ -63,14 +69,12 @@
  */
 
 #define VBAT_STABLE_MAX_DELTA 20
+#define VBAT_SETTLE_MS 500
 #define LVC_AFFECT_TIME 10000000 //10 secs for the LVC to slowly kick in
 
 // Battery monitoring stuff
-static uint8_t batteryCellCount; // Note: this can be 0 when no battery is detected or when the battery voltage sensor is missing or disabled.
-static uint16_t batteryWarningVoltage;
-static uint16_t batteryCriticalVoltage;
-static uint16_t batteryWarningHysteresisVoltage;
-static uint16_t batteryCriticalHysteresisVoltage;
+static PifBattery pifBattery;
+static bool pifBatteryUpdated;  // pifBattery has had a reading; until then the state is BATTERY_INIT
 static lowVoltageCutoff_t lowVoltageCutoff;
 //
 static currentMeter_t currentMeter;
@@ -153,6 +157,12 @@ uint32_t batteryUpdateVoltage(PifTask *p_task)
             break;
     }
 
+    // Battery presence is only re-evaluated while disarmed: the battery *might* fall out in
+    // flight, but if that happens the FC will likely be off too.
+    pifBattery_HoldPresence(&pifBattery, ARMING_FLAG(ARMED));
+    pifBattery_Update(&pifBattery);
+    pifBatteryUpdated = true;
+
     DEBUG_SET(DEBUG_BATTERY, 0, voltageMeter.unfiltered);
     DEBUG_SET(DEBUG_BATTERY, 1, voltageMeter.displayFiltered);
     return 0;
@@ -176,102 +186,73 @@ static void updateBatteryBeeperAlert(void)
     }
 }
 
-//TODO: make all of these independent of voltage filtering for display
-
-static bool isVoltageStable(void)
-{
-    return ABS(voltageMeter.displayFiltered - voltageMeter.unfiltered) <= VBAT_STABLE_MAX_DELTA;
-}
-
-static bool isVoltageFromBat(void)
+static bool isVoltageFromBat(uint16_t voltage)
 {
     // We want to disable battery getting detected around USB voltage or 0V
 
-    return (voltageMeter.displayFiltered >= batteryConfig()->vbatnotpresentcellvoltage  // Above ~0V
-        && voltageMeter.displayFiltered <= batteryConfig()->vbatmaxcellvoltage)  // 1s max cell voltage check
-        || voltageMeter.displayFiltered > batteryConfig()->vbatnotpresentcellvoltage * 2; // USB voltage - 2s or more check
+    return (voltage >= batteryConfig()->vbatnotpresentcellvoltage  // Above ~0V
+        && voltage <= batteryConfig()->vbatmaxcellvoltage)  // 1s max cell voltage check
+        || voltage > batteryConfig()->vbatnotpresentcellvoltage * 2; // USB voltage - 2s or more check
 }
 
-void batteryUpdatePresence(void)
+// Pack voltage for pifBattery in mV. Voltages around USB power or 0 V read as no battery.
+static int32_t readPifBatteryVoltage(PifBattery *p_owner)
 {
+    UNUSED(p_owner);
+    return isVoltageFromBat(voltageMeter.unfiltered) ? voltageMeter.unfiltered * 10 : 0;
+}
 
-
-    if ((voltageState == BATTERY_NOT_PRESENT || voltageState == BATTERY_INIT) && isVoltageFromBat() && isVoltageStable()) {
-        // Battery has just been connected - calculate cells, warning voltages and reset state
-
-        consumptionState = voltageState = BATTERY_OK;
-        if (batteryConfig()->forceBatteryCellCount != 0) {
-            batteryCellCount = batteryConfig()->forceBatteryCellCount;
-        } else {
-            unsigned cells = (voltageMeter.displayFiltered / batteryConfig()->vbatmaxcellvoltage) + 1;
-            if (cells > MAX_AUTO_DETECT_CELL_COUNT) {
-                // something is wrong, we expect MAX_CELL_COUNT cells maximum (and autodetection will be problematic at 6+ cells)
-                cells = MAX_AUTO_DETECT_CELL_COUNT;
-            }
-            batteryCellCount = cells;
-
-            if (!ARMING_FLAG(ARMED)) {
-                changePidProfileFromCellCount(batteryCellCount);
-            }
-        }
-        batteryWarningVoltage = batteryCellCount * batteryConfig()->vbatwarningcellvoltage;
-        batteryCriticalVoltage = batteryCellCount * batteryConfig()->vbatmincellvoltage;
-        batteryWarningHysteresisVoltage = (batteryWarningVoltage > batteryConfig()->vbathysteresis) ? batteryWarningVoltage - batteryConfig()->vbathysteresis : 0;
-        batteryCriticalHysteresisVoltage = (batteryCriticalVoltage > batteryConfig()->vbathysteresis) ? batteryCriticalVoltage - batteryConfig()->vbathysteresis : 0;
+static void onPifBatteryState(PifBattery *p_owner, PifBatteryState oldState)
+{
+    if (oldState == BAS_INIT && p_owner->_state >= BAS_OK) {
+        // Battery has just been connected and its cells counted
         lowVoltageCutoff.percentage = 100;
         lowVoltageCutoff.startTime = 0;
-    } else if (voltageState != BATTERY_NOT_PRESENT && isVoltageStable() && !isVoltageFromBat()) {
-        /* battery has been disconnected - can take a while for filter cap to disharge so we use a threshold of batteryConfig()->vbatnotpresentcellvoltage */
-
-        consumptionState = voltageState = BATTERY_NOT_PRESENT;
-
-        batteryCellCount = 0;
-        batteryWarningVoltage = 0;
-        batteryCriticalVoltage = 0;
-        batteryWarningHysteresisVoltage = 0;
-        batteryCriticalHysteresisVoltage = 0;
+        if (batteryConfig()->forceBatteryCellCount == 0 && !ARMING_FLAG(ARMED)) {
+            changePidProfileFromCellCount(p_owner->_cell_count);
+        }
     }
 }
 
-static void batteryUpdateVoltageState(void)
+// Thresholds and timing for pifBattery from the configuration, in mV and ms. PIF needs
+// min < warning < full <= max, so out-of-order settings are pushed up to keep that.
+static void batteryBuildPifConfig(PifBatteryConfig *config)
 {
-    // alerts are currently used by beeper, osd and other subsystems
-    static uint32_t lastVoltageChangeMs;
-    switch (voltageState) {
-        case BATTERY_OK:
-            if (voltageMeter.displayFiltered <= batteryWarningHysteresisVoltage) {
-                if (cmp32(millis(), lastVoltageChangeMs) >= batteryConfig()->vbatDurationForWarning * 100) {
-                    voltageState = BATTERY_WARNING;
-                }
-            } else {
-                lastVoltageChangeMs = millis();
-            }
-            break;
+    const batteryConfig_t *bc = batteryConfig();
 
-        case BATTERY_WARNING:
-            if (voltageMeter.displayFiltered <= batteryCriticalHysteresisVoltage) {
-                if (cmp32(millis(), lastVoltageChangeMs) >= batteryConfig()->vbatDurationForCritical * 100) {
-                    voltageState = BATTERY_CRITICAL;
-                }
-            } else {
-                if (voltageMeter.displayFiltered > batteryWarningVoltage) {
-                    voltageState = BATTERY_OK;
-                }
-                lastVoltageChangeMs = millis();
-            }
-            break;
+    config->cell_min_mv = MAX(bc->vbatmincellvoltage, 1) * 10;
+    config->cell_warning_mv = MAX(bc->vbatwarningcellvoltage * 10, config->cell_min_mv + 10);
+    config->cell_full_mv = MAX(bc->vbatfullcellvoltage * 10, config->cell_warning_mv + 10);
+    config->cell_max_mv = MAX(bc->vbatmaxcellvoltage * 10, config->cell_full_mv);
+    // vbat_hysteresis is for the pack in 0.01 V; PIF applies it per cell.
+    config->hysteresis_mv = bc->vbathysteresis * 10;
+    config->present_mv = MAX(bc->vbatnotpresentcellvoltage * 10, 1);
+    config->settle_ms = VBAT_SETTLE_MS;
+    config->settle_delta_mv = VBAT_STABLE_MAX_DELTA * 10;
+    config->voltage_cutoff_hz = GET_BATTERY_LPF_FREQUENCY(bc->vbatDisplayLpfPeriod);
+    config->current_cutoff_hz = 0.0f;   // the current meters filter, and mAh comes from them
+    config->warning_delay_ms = bc->vbatDurationForWarning * 100;
+    config->critical_delay_ms = bc->vbatDurationForCritical * 100;
+}
 
-        case BATTERY_CRITICAL:
-            if (voltageMeter.displayFiltered > batteryCriticalVoltage) {
-                voltageState = BATTERY_WARNING;
-                lastVoltageChangeMs = millis();
-            }
-            break;
-
-        default:
-            break;
+static batteryState_e batteryStateFromPif(void)
+{
+    if (!pifBatteryUpdated) {
+        return BATTERY_INIT;
     }
-
+    switch (pifBattery._state) {
+    case BAS_OK:
+        return BATTERY_OK;
+    case BAS_WARNING:
+        return BATTERY_WARNING;
+    case BAS_CRITICAL:
+        return BATTERY_CRITICAL;
+    case BAS_INIT:
+        return BATTERY_INIT;
+    case BAS_NOT_PRESENT:
+    default:
+        return BATTERY_NOT_PRESENT;
+    }
 }
 
 static void batteryUpdateLVC(timeUs_t currentTimeUs)
@@ -296,7 +277,7 @@ static void batteryUpdateLVC(timeUs_t currentTimeUs)
 
 static void batteryUpdateConsumptionState(void)
 {
-    if (batteryConfig()->useConsumptionAlerts && batteryConfig()->batteryCapacity > 0 && batteryCellCount > 0) {
+    if (batteryConfig()->useConsumptionAlerts && batteryConfig()->batteryCapacity > 0 && getBatteryCellCount() > 0) {
         uint8_t batteryPercentageRemaining = calculateBatteryPercentageRemaining();
 
         if (batteryPercentageRemaining == 0) {
@@ -311,7 +292,14 @@ static void batteryUpdateConsumptionState(void)
 
 void batteryUpdateStates(timeUs_t currentTimeUs)
 {
-    batteryUpdateVoltageState();
+    const batteryState_e previousVoltageState = voltageState;
+
+    voltageState = batteryStateFromPif();
+    if (voltageState >= BATTERY_NOT_PRESENT) {
+        consumptionState = voltageState;
+    } else if (previousVoltageState >= BATTERY_NOT_PRESENT) {
+        consumptionState = BATTERY_OK;
+    }
     batteryUpdateConsumptionState();
     batteryUpdateLVC(currentTimeUs);
     batteryState = MAX(voltageState, consumptionState);
@@ -350,16 +338,21 @@ void batteryInit(void)
     // presence
     //
     batteryState = BATTERY_INIT;
-    batteryCellCount = 0;
+
+    PifBatteryConfig pifConfig;
+    batteryBuildPifConfig(&pifConfig);
+    if (!pifBattery_Init(&pifBattery, PIF_ID_AUTO, &pifConfig, readPifBatteryVoltage)) {
+        pifBattery_Init(&pifBattery, PIF_ID_AUTO, &pif_battery_lipo, readPifBatteryVoltage);
+    }
+    pifBattery_SetCellCount(&pifBattery, batteryConfig()->forceBatteryCellCount);
+    pifBattery_SetCapacity(&pifBattery, batteryConfig()->batteryCapacity);
+    pifBattery.evt_state = onPifBatteryState;
+    pifBatteryUpdated = false;
 
     //
     // voltage
     //
     voltageState = BATTERY_INIT;
-    batteryWarningVoltage = 0;
-    batteryCriticalVoltage = 0;
-    batteryWarningHysteresisVoltage = 0;
-    batteryCriticalHysteresisVoltage = 0;
     lowVoltageCutoff.enabled = false;
     lowVoltageCutoff.percentage = 100;
     lowVoltageCutoff.startTime = 0;
@@ -418,8 +411,9 @@ uint32_t batteryUpdateCurrentMeter(PifTask *p_task)
 {
     const timeUs_t currentTimeUs = p_task->_last_execute_time;
 
-    if (batteryCellCount == 0) {
+    if (getBatteryCellCount() == 0) {
         currentMeterReset(&currentMeter);
+        pifBattery_SetConsumedMah(&pifBattery, 0);
         return 0;
     }
 
@@ -465,23 +459,17 @@ uint32_t batteryUpdateCurrentMeter(PifTask *p_task)
             currentMeterReset(&currentMeter);
             break;
     }
+    // The meters know the charge drawn best (the ESC and MSP ones are told it), so pifBattery takes
+    // it from them for the capacity-based remaining charge.
+    pifBattery_SetConsumedMah(&pifBattery, MAX(currentMeter.mAhDrawn, 0));
     return 0;
 }
 
+// From the mAh drawn if a capacity is set, otherwise from the cell voltage between
+// vbat_min_cell_voltage (0 %) and vbat_full_cell_voltage (100 %).
 uint8_t calculateBatteryPercentageRemaining(void)
 {
-    uint8_t batteryPercentage = 0;
-    if (batteryCellCount > 0) {
-        uint16_t batteryCapacity = batteryConfig()->batteryCapacity;
-
-        if (batteryCapacity > 0) {
-            batteryPercentage = constrain(((float)batteryCapacity - currentMeter.mAhDrawn) * 100 / batteryCapacity, 0, 100);
-        } else {
-            batteryPercentage = constrain((((uint32_t)voltageMeter.displayFiltered - (batteryConfig()->vbatmincellvoltage * batteryCellCount)) * 100) / ((batteryConfig()->vbatmaxcellvoltage - batteryConfig()->vbatmincellvoltage) * batteryCellCount), 0, 100);
-        }
-    }
-
-    return batteryPercentage;
+    return pifBattery_GetRemainingPercent(&pifBattery);
 }
 
 void batteryUpdateAlarms(void)
@@ -514,17 +502,19 @@ uint16_t getBatteryVoltageLatest(void)
 
 uint8_t getBatteryCellCount(void)
 {
-    return batteryCellCount;
+    return pifBattery._cell_count;
 }
 
 uint16_t getBatteryAverageCellVoltage(void)
 {
+    const uint8_t batteryCellCount = getBatteryCellCount();
     return (batteryCellCount ? voltageMeter.displayFiltered / batteryCellCount : 0);
 }
 
 #if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
 uint16_t getBatterySagCellVoltage(void)
 {
+    const uint8_t batteryCellCount = getBatteryCellCount();
     return (batteryCellCount ? voltageMeter.sagFiltered / batteryCellCount : 0);
 }
 #endif

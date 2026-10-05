@@ -151,10 +151,7 @@ static uint32_t taskHandleSerial(PifTask *p_task)
 
 static uint32_t taskBatteryAlerts(PifTask *p_task)
 {
-    if (!ARMING_FLAG(ARMED)) {
-        // the battery *might* fall out in flight, but if that happens the FC will likely be off too unless the user has battery backup.
-        batteryUpdatePresence();
-    }
+    // Battery presence is updated with the voltage, in batteryUpdateVoltage().
     batteryUpdateStates(p_task->_last_execute_time);
     batteryUpdateAlarms();
     return 0;
