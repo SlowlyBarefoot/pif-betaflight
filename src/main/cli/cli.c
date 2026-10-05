@@ -4906,6 +4906,96 @@ static void cliStatus(const char *cmdName, char *cmdline)
     cliPrintLinefeed();
 }
 
+// The task list is PIF's ring rather than Betaflight's task table, so the
+// tasks PIF modules attach for themselves (the barometer reads, for one) are
+// listed next to the Betaflight ones. A Betaflight task is registered under
+// PIF_ID_USER(taskId) and keeps its usual number; any other task shows "--".
+// PIF's idle callback, where the RX and OSD check functions run, follows as
+// IDLE: it is not in the ring, but its time counts towards the CPU load the
+// configurator shows, so the total below includes it as well.
+static uint32_t pifTaskAverageOrZero(uint32_t average)
+{
+    return (average == PIF_TASK_AVERAGE_NONE) ? 0 : average;
+}
+
+// Prints the columns after the name and returns the average load in 0.1%.
+static int cliPrintTaskStatistics(uint32_t averageDeltaTimeUs, uint32_t maxExecutionTimeUs,
+        uint32_t averageExecutionTimeUs, uint32_t totalExecutionTimeUs, uint32_t maxDelayUs)
+{
+    const int taskFrequency = averageDeltaTimeUs == 0 ? 0 : lrintf(1e6f / averageDeltaTimeUs);
+    const int maxLoad = (maxExecutionTimeUs * taskFrequency) / 1000;
+    const int averageLoad = (averageExecutionTimeUs * taskFrequency) / 1000;
+
+    if (systemConfig()->task_statistics) {
+#if defined(USE_LATE_TASK_STATISTICS)
+        cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d %9d",
+                taskFrequency, (int)maxExecutionTimeUs, (int)averageExecutionTimeUs,
+                maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
+                (int)(totalExecutionTimeUs / 1000),
+                (int)maxDelayUs);
+#else
+        UNUSED(maxDelayUs);
+        cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d",
+                taskFrequency, (int)maxExecutionTimeUs, (int)averageExecutionTimeUs,
+                maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
+                (int)(totalExecutionTimeUs / 1000));
+#endif
+    } else {
+        UNUSED(maxDelayUs);
+        cliPrintLinef("%6d", taskFrequency);
+    }
+
+    return averageLoad;
+}
+
+static void cliPrintPifTask(PifTask *p_task, void *p_arg)
+{
+    int *averageLoadSum = p_arg;
+    const char *taskName = p_task->name ? p_task->name : "---";
+
+    if (p_task->_id < PIF_ID_USER(0)) {
+        cliPrintf("I%02d - (%15s) ", p_task->_id, taskName);
+    } else if (p_task->_id >= PIF_ID_USER(0) && p_task->_id < PIF_ID_USER(TASK_COUNT)) {
+        cliPrintf("U%02d - (%15s) ", p_task->_id - PIF_ID_USER(0), taskName);
+    } else {
+        cliPrintf("--- - (%15s) ", taskName);
+    }
+
+    const int averageLoad = cliPrintTaskStatistics(
+            pifTaskAverageOrZero(pifTask_GetAverageDeltaTime(p_task)),
+            p_task->_max_execution_time,
+            pifTaskAverageOrZero(pifTask_GetAverageExecuteTime(p_task)),
+            p_task->_total_execution_time,
+            p_task->_max_delay);
+    if (p_task->_id != PIF_ID_USER(TASK_SERIAL)) {
+        *averageLoadSum += averageLoad;
+    }
+
+    pifTask_ResetMaxExecutionTime(p_task);
+}
+
+static int cliPrintPifIdle(void)
+{
+    PifTaskIdleStatistics idle;
+
+    // No idle callback set, so there is no line to print and nothing to add.
+    if (!pifTaskManager_GetIdleStatistics(&idle)) {
+        return 0;
+    }
+
+    // The idle callback has no release to be late for, so it has no delay to report.
+    cliPrintf("--- - (%15s) ", "IDLE");
+    const int averageLoad = cliPrintTaskStatistics(
+            pifTaskAverageOrZero(idle.average_delta_time),
+            idle.max_execution_time,
+            pifTaskAverageOrZero(idle.average_execution_time),
+            idle.total_execution_time,
+            0);
+
+    pifTaskManager_ResetIdleMaxExecutionTime();
+    return averageLoad;
+}
+
 static void cliTasks(const char *cmdName, char *cmdline)
 {
     UNUSED(cmdName);
@@ -4915,50 +5005,21 @@ static void cliTasks(const char *cmdName, char *cmdline)
 #ifndef MINIMAL_CLI
     if (systemConfig()->task_statistics) {
 #if defined(USE_LATE_TASK_STATISTICS)
-        cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms maxdly/us");
+        cliPrintLine("Task list              rate/hz  max/us  avg/us maxload avgload  total/ms maxdly/us");
 #else
-        cliPrintLine("Task list             rate/hz  max/us  avg/us maxload avgload  total/ms");
+        cliPrintLine("Task list              rate/hz  max/us  avg/us maxload avgload  total/ms");
 #endif
     } else {
         cliPrintLine("Task list");
     }
 #endif
-    for (taskId_e taskId = 0; taskId < TASK_COUNT; taskId++) {
-        taskInfo_t taskInfo;
-        getTaskInfo(taskId, &taskInfo);
-        if (taskInfo.isEnabled) {
-            int taskFrequency = taskInfo.averageDeltaTime10thUs == 0 ? 0 : lrintf(1e7f / taskInfo.averageDeltaTime10thUs);
-            cliPrintf("%02d - (%15s) ", taskId, taskInfo.taskName);
-            const int maxLoad = taskInfo.maxExecutionTimeUs == 0 ? 0 : (taskInfo.maxExecutionTimeUs * taskFrequency) / 1000;
-            const int averageLoad = taskInfo.averageExecutionTime10thUs == 0 ? 0 : (taskInfo.averageExecutionTime10thUs * taskFrequency) / 10000;
-            if (taskId != TASK_SERIAL) {
-                averageLoadSum += averageLoad;
-            }
-            if (systemConfig()->task_statistics) {
-#if defined(USE_LATE_TASK_STATISTICS)
-                cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d %9d",
-                        taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10,
-                        maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
-                        taskInfo.totalExecutionTimeUs / 1000,
-                        (int)taskInfo.maxDelayUs);
-#else
-                cliPrintLinef("%6d %7d %7d %4d.%1d%% %4d.%1d%% %9d",
-                        taskFrequency, taskInfo.maxExecutionTimeUs, taskInfo.averageExecutionTime10thUs / 10,
-                        maxLoad/10, maxLoad%10, averageLoad/10, averageLoad%10,
-                        taskInfo.totalExecutionTimeUs / 1000);
-#endif
-            } else {
-                cliPrintLinef("%6d", taskFrequency);
-            }
-
-            schedulerResetTaskMaxExecutionTime(taskId);
-        }
-    }
+    pifTaskManager_AllTask(cliPrintPifTask, &averageLoadSum);
+    averageLoadSum += cliPrintPifIdle();
     if (systemConfig()->task_statistics) {
         cfCheckFuncInfo_t checkFuncInfo;
         getCheckFuncInfo(&checkFuncInfo);
-        cliPrintLinef("RX Check Function %19d %7d %25d", checkFuncInfo.maxExecutionTimeUs, checkFuncInfo.averageExecutionTimeUs, checkFuncInfo.totalExecutionTimeUs / 1000);
-        cliPrintLinef("Total (excluding SERIAL) %33d.%1d%%", averageLoadSum/10, averageLoadSum%10);
+        cliPrintLinef("RX Check Function %20d %7d %25d", checkFuncInfo.maxExecutionTimeUs, checkFuncInfo.averageExecutionTimeUs, checkFuncInfo.totalExecutionTimeUs / 1000);
+        cliPrintLinef("Total (excluding SERIAL) %34d.%1d%%", averageLoadSum/10, averageLoadSum%10);
         if (debugMode == DEBUG_SCHEDULER_DETERMINISM) {
             cliPrintLinef("Gyro task max delay %dus, missed releases %d",
                     (int)schedulerGetRealtimeMaxDelayUs(), (int)schedulerGetRealtimeMissCount());
