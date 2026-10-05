@@ -687,6 +687,7 @@ PIF_TEST_SOURCES = $(addprefix $(PIF_DIR)/source/, \
 	core/pif_task_manager.c \
 	core/pif_math.c \
 	core/pif_stream_buffer.c \
+	sensor/pif_ahrs.c \
 	filter/pif_biquad_filter.c \
 	filter/pif_moving_average.c \
 	filter/pif_pt_filter.c)

@@ -19,6 +19,10 @@
  */
 
 // Inertial Measurement Unit (IMU)
+//
+// The Mahony attitude estimate runs on PIF's pif_ahrs; after each update q and rMat here are set
+// from it. The gain schedule, the choice of magnetometer or GPS course, the Euler angles, headfree
+// and the throttle angle correction stay here.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -52,6 +56,8 @@
 #include "sensors/compass.h"
 #include "sensors/gyro.h"
 #include "sensors/sensors.h"
+
+#include "sensor/pif_ahrs.h"
 
 #if defined(SIMULATOR_BUILD) && defined(SIMULATOR_MULTITHREAD)
 #include <stdio.h>
@@ -97,6 +103,8 @@ static float fc_acc;
 static float smallAngleCosZ = 0;
 
 static imuRuntimeConfig_t imuRuntimeConfig;
+
+static PifAhrs pifAhrs;
 
 float rMat[3][3];
 
@@ -189,6 +197,8 @@ void imuInit(void)
     canUseGPSHeading = false;
 #endif
 
+    pifAhrs_Init(&pifAhrs, NULL);
+    pifAhrs_SetQuaternion(&pifAhrs, q.w, q.x, q.y, q.z);
     imuComputeRotationMatrix();
 
 #if defined(SIMULATOR_BUILD) && defined(SIMULATOR_MULTITHREAD)
@@ -199,130 +209,47 @@ void imuInit(void)
 }
 
 #if defined(USE_ACC)
-static float invSqrt(float x)
-{
-    return 1.0f / sqrtf(x);
-}
-
-static void imuMahonyAHRSupdate(float dt, float gx, float gy, float gz,
-                                bool useAcc, float ax, float ay, float az,
+// One step of the Mahony filter in pifAhrs. The gyro is in deg/s, the accelerometer in sensor
+// units. The magnetometer, or else the GPS course over ground, corrects the heading with the same
+// gain as the accelerometer, as before. The gyro bias is learned only below SPIN_RATE_LIMIT.
+static void imuMahonyAHRSupdate(float dt, float *gyroDps,
+                                bool useAcc, float *accRaw,
                                 bool useMag,
                                 bool useCOG, float courseOverGround, const float dcmKpGain)
 {
-    static float integralFBx = 0.0f,  integralFBy = 0.0f, integralFBz = 0.0f;    // integral error terms scaled by Ki
+    const PifAhrsConfig config = {
+        .kp = dcmKpGain,
+        .ki = imuRuntimeConfig.dcm_ki,
+        .mag_kp = dcmKpGain,
+        .bias_limit_dps = 1000.0f,                  // no limit of its own
+        .bias_learn_max_rate_dps = SPIN_RATE_LIMIT,
+        .accel_tolerance_g = 0.0f,                  // imuIsAccelerometerHealthy() decides
+    };
+    pifAhrs_SetConfig(&pifAhrs, &config);
+    if (imuRuntimeConfig.dcm_ki <= 0.0f) {
+        pifAhrs_ResetBias(&pifAhrs);    // prevent integral windup
+    }
 
-    // Calculate general spin rate (rad/s)
-    const float spin_rate = sqrtf(sq(gx) + sq(gy) + sq(gz));
+    float accG[XYZ_AXIS_COUNT];
+    for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+        accG[axis] = accRaw[axis] * acc.dev.acc_1G_rec;
+    }
 
-    // Use raw heading error (from GPS or whatever else)
-    float ex = 0, ey = 0, ez = 0;
     if (useCOG) {
-        while (courseOverGround >  M_PIf) {
-            courseOverGround -= (2.0f * M_PIf);
-        }
-
-        while (courseOverGround < -M_PIf) {
-            courseOverGround += (2.0f * M_PIf);
-        }
-
-        const float ez_ef = (- sin_approx(courseOverGround) * rMat[0][0] - cos_approx(courseOverGround) * rMat[1][0]);
-
-        ex = rMat[2][0] * ez_ef;
-        ey = rMat[2][1] * ez_ef;
-        ez = rMat[2][2] * ez_ef;
-    }
-
-#ifdef USE_MAG
-    // Use measured magnetic field vector
-    float mx = mag.magADC[X];
-    float my = mag.magADC[Y];
-    float mz = mag.magADC[Z];
-    float recipMagNorm = sq(mx) + sq(my) + sq(mz);
-    if (useMag && recipMagNorm > 0.01f) {
-        // Normalise magnetometer measurement
-        recipMagNorm = invSqrt(recipMagNorm);
-        mx *= recipMagNorm;
-        my *= recipMagNorm;
-        mz *= recipMagNorm;
-
-        // For magnetometer correction we make an assumption that magnetic field is perpendicular to gravity (ignore Z-component in EF).
-        // This way magnetic field will only affect heading and wont mess roll/pitch angles
-
-        // (hx; hy; 0) - measured mag field vector in EF (assuming Z-component is zero)
-        // (bx; 0; 0) - reference mag field vector heading due North in EF (assuming Z-component is zero)
-        const float hx = rMat[0][0] * mx + rMat[0][1] * my + rMat[0][2] * mz;
-        const float hy = rMat[1][0] * mx + rMat[1][1] * my + rMat[1][2] * mz;
-        const float bx = sqrtf(hx * hx + hy * hy);
-
-        // magnetometer error is cross product between estimated magnetic north and measured magnetic north (calculated in EF)
-        const float ez_ef = -(hy * bx);
-
-        // Rotate mag error vector back to BF and accumulate
-        ex += rMat[2][0] * ez_ef;
-        ey += rMat[2][1] * ez_ef;
-        ez += rMat[2][2] * ez_ef;
-    }
-#else
-    UNUSED(useMag);
-#endif
-
-    // Use measured acceleration vector
-    float recipAccNorm = sq(ax) + sq(ay) + sq(az);
-    if (useAcc && recipAccNorm > 0.01f) {
-        // Normalise accelerometer measurement
-        recipAccNorm = invSqrt(recipAccNorm);
-        ax *= recipAccNorm;
-        ay *= recipAccNorm;
-        az *= recipAccNorm;
-
-        // Error is sum of cross product between estimated direction and measured direction of gravity
-        ex += (ay * rMat[2][2] - az * rMat[2][1]);
-        ey += (az * rMat[2][0] - ax * rMat[2][2]);
-        ez += (ax * rMat[2][1] - ay * rMat[2][0]);
-    }
-
-    // Compute and apply integral feedback if enabled
-    if (imuRuntimeConfig.dcm_ki > 0.0f) {
-        // Stop integrating if spinning beyond the certain limit
-        if (spin_rate < DEGREES_TO_RADIANS(SPIN_RATE_LIMIT)) {
-            const float dcmKiGain = imuRuntimeConfig.dcm_ki;
-            integralFBx += dcmKiGain * ex * dt;    // integral error scaled by Ki
-            integralFBy += dcmKiGain * ey * dt;
-            integralFBz += dcmKiGain * ez * dt;
-        }
+        pifAhrs_UpdateWithHeading(&pifAhrs, gyroDps, useAcc ? accG : NULL, courseOverGround / RAD, dt);
     } else {
-        integralFBx = 0.0f;    // prevent integral windup
-        integralFBy = 0.0f;
-        integralFBz = 0.0f;
+#ifdef USE_MAG
+        pifAhrs_Update(&pifAhrs, gyroDps, useAcc ? accG : NULL, useMag ? mag.magADC : NULL, dt);
+#else
+        UNUSED(useMag);
+        pifAhrs_Update(&pifAhrs, gyroDps, useAcc ? accG : NULL, NULL, dt);
+#endif
     }
 
-    // Apply proportional and integral feedback
-    gx += dcmKpGain * ex + integralFBx;
-    gy += dcmKpGain * ey + integralFBy;
-    gz += dcmKpGain * ez + integralFBz;
-
-    // Integrate rate of change of quaternion
-    gx *= (0.5f * dt);
-    gy *= (0.5f * dt);
-    gz *= (0.5f * dt);
-
-    quaternion buffer;
-    buffer.w = q.w;
-    buffer.x = q.x;
-    buffer.y = q.y;
-    buffer.z = q.z;
-
-    q.w += (-buffer.x * gx - buffer.y * gy - buffer.z * gz);
-    q.x += (+buffer.w * gx + buffer.y * gz - buffer.z * gy);
-    q.y += (+buffer.w * gy - buffer.x * gz + buffer.z * gx);
-    q.z += (+buffer.w * gz + buffer.x * gy - buffer.y * gx);
-
-    // Normalise quaternion
-    float recipNorm = invSqrt(sq(q.w) + sq(q.x) + sq(q.y) + sq(q.z));
-    q.w *= recipNorm;
-    q.x *= recipNorm;
-    q.y *= recipNorm;
-    q.z *= recipNorm;
+    q.w = pifAhrs._q[0];
+    q.x = pifAhrs._q[1];
+    q.y = pifAhrs._q[2];
+    q.z = pifAhrs._q[3];
 
     // Pre-compute rotation matrix from quaternion
     imuComputeRotationMatrix();
@@ -542,9 +469,8 @@ static void imuCalculateEstimatedAttitude(timeUs_t currentTimeUs)
         useAcc = imuIsAccelerometerHealthy(accAverage);
     }
 
-    imuMahonyAHRSupdate(deltaT * 1e-6f,
-                        DEGREES_TO_RADIANS(gyroAverage[X]), DEGREES_TO_RADIANS(gyroAverage[Y]), DEGREES_TO_RADIANS(gyroAverage[Z]),
-                        useAcc, accAverage[X], accAverage[Y], accAverage[Z],
+    imuMahonyAHRSupdate(deltaT * 1e-6f, gyroAverage,
+                        useAcc, accAverage,
                         useMag,
                         useCOG, courseOverGround,  imuCalcKpGain(currentTimeUs, useAcc, gyroAverage));
 
@@ -654,6 +580,7 @@ void imuSetAttitudeQuat(float w, float x, float y, float z)
     q.x = x;
     q.y = y;
     q.z = z;
+    pifAhrs_SetQuaternion(&pifAhrs, w, x, y, z);
 
     imuComputeRotationMatrix();
 

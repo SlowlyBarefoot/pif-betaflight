@@ -29,7 +29,8 @@
 # the filters, pif_stream_buffer for sbuf_t, pif_encoding for zigzag and
 # varints, and pif_huffman for the dataflash compression. sensors/battery.c
 # uses pif_battery for presence, cell count, voltage state and remaining
-# charge. pif_log.c is left out
+# charge, and flight/imu.c pif_ahrs for the attitude estimate. pif_log.c is
+# left out
 # because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -95,6 +96,7 @@ PIF_SRC = \
             pif_biquad_filter.c \
             pif_moving_average.c \
             pif_battery.c \
+            pif_ahrs.c \
             pif_linker.c
 
 SRC += $(PIF_SRC)
