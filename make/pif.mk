@@ -24,7 +24,10 @@
 # pif_gps_ublox for the NMEA and UBX GPS parsers, and pif_msp and pif_msp_v2
 # for the MSP serial ports, pif_dshot for the DShot frames, commands and
 # bidirectional telemetry, pif_adc for the ADC conversions and pif_flash for
-# writing the config to flash. pif_log.c is left out
+# writing the config to flash. common/ uses pif_math for the fast math
+# approximations, pif_pt_filter, pif_biquad_filter and pif_moving_average for
+# the filters, pif_stream_buffer for sbuf_t, pif_encoding for zigzag and
+# varints, and pif_huffman for the dataflash compression. pif_log.c is left out
 # because PIF_NO_LOG is set in src/main/pif/pif_conf.h.
 ###############################################################################
 
@@ -41,7 +44,7 @@ INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(PIF_DIR)/gpl/include \
                    $(ROOT)/src/main/pif
 
-VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/protocol:$(PIF_DIR)/source/motor:$(PIF_DIR)/source/storage:$(ROOT)/src/main/pif
+VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/codec:$(PIF_DIR)/source/filter:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/protocol:$(PIF_DIR)/source/motor:$(PIF_DIR)/source/storage:$(ROOT)/src/main/pif
 
 # The GPL-3.0 modules of PIF (GPS, DShot, MAX7456, MSPv2, HMC5883, MS5611)
 # live under gpl/. Betaflight is GPL-3.0 as well, so building them is fine.
@@ -82,6 +85,24 @@ PIF_SRC = \
             pif_dshot.c \
             pif_adc.c \
             pif_flash.c \
+            pif_math.c \
+            pif_stream_buffer.c \
+            pif_encoding.c \
+            pif_huffman.c \
+            pif_pt_filter.c \
+            pif_biquad_filter.c \
+            pif_moving_average.c \
             pif_linker.c
 
 SRC += $(PIF_SRC)
+
+# The filters and the math approximations run in the gyro and PID loops, so they
+# get the same speed optimisation as common/filter.c and common/maths.c. The
+# Makefile matches the source path as make found it through VPATH.
+ifneq ($(TARGET),$(filter $(TARGET),$(F1_TARGETS)))
+SPEED_OPTIMISED_SRC := $(SPEED_OPTIMISED_SRC) \
+            $(PIF_DIR)/source/core/pif_math.c \
+            $(PIF_DIR)/source/filter/pif_pt_filter.c \
+            $(PIF_DIR)/source/filter/pif_biquad_filter.c \
+            $(PIF_DIR)/source/filter/pif_moving_average.c
+endif

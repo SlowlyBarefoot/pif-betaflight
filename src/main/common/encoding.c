@@ -22,6 +22,8 @@
 
 #include "encoding.h"
 
+#include "codec/pif_encoding.h"
+
 /**
  * Cast the in-memory representation of the given float directly to an int.
  *
@@ -30,14 +32,7 @@
  */
 uint32_t castFloatBytesToInt(float f)
 {
-    union floatConvert_t {
-        float f;
-        uint32_t u;
-    } floatConvert;
-
-    floatConvert.f = f;
-
-    return floatConvert.u;
+    return pifEncoding_FloatToBits(f);
 }
 
 /**
@@ -49,5 +44,5 @@ uint32_t castFloatBytesToInt(float f)
  */
 uint32_t zigzagEncode(int32_t value)
 {
-    return (uint32_t)((value << 1) ^ (value >> 31));
+    return pifEncoding_ZigzagEncode(value);
 }

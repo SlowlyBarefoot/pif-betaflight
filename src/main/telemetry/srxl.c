@@ -92,8 +92,7 @@ static void srxlInitializeFrame(sbuf_t *dst)
       srxl2InitializeFrame(dst);
 #endif
     } else {
-        dst->ptr = srxlFrame;
-        dst->end = ARRAYEND(srxlFrame);
+        sbufInit(dst, srxlFrame, ARRAYEND(srxlFrame));
 
         sbufWriteU8(dst, SRXL_ADDRESS_FIRST);
         sbufWriteU8(dst, SRXL_ADDRESS_SECOND);

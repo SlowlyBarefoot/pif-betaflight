@@ -761,17 +761,17 @@ void pidUpdateAirmodeLpf(float currentOffset)
     offsetHpf = offsetHpf - pt1FilterApply(&pidRuntime.airmodeThrottleLpf2, offsetHpf);
 
     // During high frequency oscillation 2 * currentOffset averages to the offset required to avoid mirroring of the waveform
-    pt1FilterApply(&pidRuntime.airmodeThrottleLpf1, offsetHpf);
+    float offset = pt1FilterApply(&pidRuntime.airmodeThrottleLpf1, offsetHpf);
     // Bring offset up immediately so the filter only applies to the decline
-    if (currentOffset * pidRuntime.airmodeThrottleLpf1.state >= 0 && fabsf(currentOffset) > pidRuntime.airmodeThrottleLpf1.state) {
-        pidRuntime.airmodeThrottleLpf1.state = currentOffset;
+    if (currentOffset * offset >= 0 && fabsf(currentOffset) > offset) {
+        offset = currentOffset;
     }
-    pidRuntime.airmodeThrottleLpf1.state = constrainf(pidRuntime.airmodeThrottleLpf1.state, -pidRuntime.airmodeThrottleOffsetLimit, pidRuntime.airmodeThrottleOffsetLimit);
+    pifPtFilter_Reset(&pidRuntime.airmodeThrottleLpf1, constrainf(offset, -pidRuntime.airmodeThrottleOffsetLimit, pidRuntime.airmodeThrottleOffsetLimit));
 }
 
 float pidGetAirmodeThrottleOffset()
 {
-    return pidRuntime.airmodeThrottleLpf1.state;
+    return pifPtFilter_Output(&pidRuntime.airmodeThrottleLpf1);
 }
 #endif
 

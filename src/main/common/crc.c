@@ -26,93 +26,77 @@
 
 #include "streambuf.h"
 
+#include "core/pif.h"
+
+// The CRCs are PIF's pifCrc16_*, pifCrc8_* and pifCheckXor_*. Those take
+// 16-bit lengths, so longer blocks are fed in pieces.
+
+#define CRC_CHUNK_MAX   0xFFFF
 
 uint16_t crc16_ccitt(uint16_t crc, unsigned char a)
 {
-    crc ^= (uint16_t)a << 8;
-    for (int ii = 0; ii < 8; ++ii) {
-        if (crc & 0x8000) {
-            crc = (crc << 1) ^ 0x1021;
-        } else {
-            crc = crc << 1;
-        }
-    }
-    return crc;
+    return pifCrc16_Add(crc, a);
 }
 
 uint16_t crc16_ccitt_update(uint16_t crc, const void *data, uint32_t length)
 {
     const uint8_t *p = (const uint8_t *)data;
-    const uint8_t *pend = p + length;
 
-    for (; p != pend; p++) {
-        crc = crc16_ccitt(crc, *p);
+    while (length) {
+        const uint16_t chunk = length > CRC_CHUNK_MAX ? CRC_CHUNK_MAX : length;
+        crc = pifCrc16_Update(crc, p, chunk);
+        p += chunk;
+        length -= chunk;
     }
     return crc;
 }
 
 void crc16_ccitt_sbuf_append(sbuf_t *dst, uint8_t *start)
 {
-    uint16_t crc = 0;
-    const uint8_t * const end = sbufPtr(dst);
-    for (const uint8_t *ptr = start; ptr < end; ++ptr) {
-        crc = crc16_ccitt(crc, *ptr);
-    }
+    const uint16_t crc = crc16_ccitt_update(0, start, sbufPtr(dst) - start);
     sbufWriteU16(dst, crc);
 }
 
 uint8_t crc8_calc(uint8_t crc, unsigned char a, uint8_t poly)
 {
-    crc ^= a;
-    for (int ii = 0; ii < 8; ++ii) {
-        if (crc & 0x80) {
-            crc = (crc << 1) ^ poly;
-        } else {
-            crc = crc << 1;
-        }
-    }
-    return crc;
+    return pifCrc8_Add(crc, a, poly);
 }
 
 uint8_t crc8_update(uint8_t crc, const void *data, uint32_t length, uint8_t poly)
 {
     const uint8_t *p = (const uint8_t *)data;
-    const uint8_t *pend = p + length;
 
-    for (; p != pend; p++) {
-        crc = crc8_calc(crc, *p, poly);
+    while (length) {
+        const uint16_t chunk = length > CRC_CHUNK_MAX ? CRC_CHUNK_MAX : length;
+        crc = pifCrc8_Update(crc, p, chunk, poly);
+        p += chunk;
+        length -= chunk;
     }
     return crc;
 }
 
 void crc8_sbuf_append(sbuf_t *dst, uint8_t *start, uint8_t poly)
 {
-    uint8_t crc = 0;
-    const uint8_t * const end = dst->ptr;
-    for (const uint8_t *ptr = start; ptr < end; ++ptr) {
-        crc = crc8_calc(crc, *ptr, poly);
-    }
+    const uint8_t crc = crc8_update(0, start, sbufPtr(dst) - start, poly);
     sbufWriteU8(dst, crc);
 }
 
 uint8_t crc8_xor_update(uint8_t crc, const void *data, uint32_t length)
 {
     const uint8_t *p = (const uint8_t *)data;
-    const uint8_t *pend = p + length;
 
-    for (; p != pend; p++) {
-        crc ^= *p;
+    while (length) {
+        const uint16_t chunk = length > CRC_CHUNK_MAX ? CRC_CHUNK_MAX : length;
+        crc = pifCheckXor_Update(crc, p, chunk);
+        p += chunk;
+        length -= chunk;
     }
     return crc;
 }
 
 void crc8_xor_sbuf_append(sbuf_t *dst, uint8_t *start)
 {
-    uint8_t crc = 0;
-    const uint8_t *end = dst->ptr;
-    for (uint8_t *ptr = start; ptr < end; ++ptr) {
-        crc ^= *ptr;
-    }
+    const uint8_t crc = crc8_xor_update(0, start, sbufPtr(dst) - start);
     sbufWriteU8(dst, crc);
 }
 

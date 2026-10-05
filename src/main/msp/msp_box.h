@@ -35,10 +35,10 @@ const box_t *findBoxByPermanentId(uint8_t permanentId);
 
 struct boxBitmask_s;
 int packFlightModeFlags(struct boxBitmask_s *mspFlightModeFlags);
-struct sbuf_s;
-void serializeBoxNameFn(struct sbuf_s *dst, const box_t *box);
-void serializeBoxPermanentIdFn(struct sbuf_s *dst, const box_t *box);
-typedef void serializeBoxFn(struct sbuf_s *dst, const box_t *box);
-void serializeBoxReply(struct sbuf_s *dst, int page, serializeBoxFn *serializeBox);
+struct StPifStreamBuffer;
+void serializeBoxNameFn(struct StPifStreamBuffer *dst, const box_t *box);
+void serializeBoxPermanentIdFn(struct StPifStreamBuffer *dst, const box_t *box);
+typedef void serializeBoxFn(struct StPifStreamBuffer *dst, const box_t *box);
+void serializeBoxReply(struct StPifStreamBuffer *dst, int page, serializeBoxFn *serializeBox);
 void initActiveBoxIds(void);
 bool getBoxIdState(boxId_e boxid);

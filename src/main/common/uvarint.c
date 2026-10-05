@@ -28,41 +28,25 @@
 
 #include "common/uvarint.h"
 
+#include "codec/pif_encoding.h"
+
+// Base-128 varints by PIF's pif_encoding.
+
 int uvarintEncode(uint32_t val, uint8_t *ptr, size_t size)
 {
-    unsigned ii = 0;
-    while (val > 0x80) {
-        if (ii >= size) {
-            return -1;
-        }
-        ptr[ii] = (val & 0xFF) | 0x80;
-        val >>= 7;
-        ii++;
-    }
-    if (ii >= size) {
-        return -1;
-    }
-    ptr[ii] = val & 0xFF;
-    return ii + 1;
+    const uint8_t written = pifEncoding_UvarintEncode(val, ptr, size > UINT16_MAX ? UINT16_MAX : size);
+    return written ? written : -1;
 }
 
+// Returns the bytes consumed, -1 if the data ends before the varint does, or
+// -2 if the varint does not fit in 32 bits.
 int uvarintDecode(uint32_t *val, const uint8_t *ptr, size_t size)
 {
-    unsigned s = 0;
-    *val = 0;
-    for (size_t ii = 0; ii < size; ii++) {
-        uint8_t b = ptr[ii];
-        if (b < 0x80) {
-            if (ii > 5 || (ii == 5 && b > 1)) {
-                // uint32_t overflow
-                return -2;
-            }
-            *val |= ((uint32_t)b) << s;
-            return ii + 1;
-        }
-        *val |= ((uint32_t)(b & 0x7f)) << s;
-        s += 7;
+    const uint16_t available = size > UINT16_MAX ? UINT16_MAX : size;
+    const uint8_t consumed = pifEncoding_UvarintDecode(val, ptr, available);
+
+    if (consumed) {
+        return consumed;
     }
-    // no value could be decoded and we have no data left
-    return -1;
+    return available < PIF_UVARINT32_MAX_SIZE ? -1 : -2;
 }

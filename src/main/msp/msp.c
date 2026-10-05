@@ -570,39 +570,31 @@ static void serializeDataflashReadReply(sbuf_t *dst, uint32_t address, const uin
         // This may be DMAable, so make it cache aligned
         __attribute__ ((aligned(32))) uint8_t readBuffer[READ_BUFFER_SIZE];
 
-        huffmanState_t state = {
-            .bytesWritten = 0,
-            .outByte = sbufPtr(dst) + sizeof(uint16_t) + sizeof(uint8_t) + HUFFMAN_INFO_SIZE,
-            .outBufLen = readLen,
-            .outBit = 0x80,
-        };
-        *state.outByte = 0;
+        PifHuffmanEncoder encoder;
+        pifHuffman_InitEncoder(&encoder, huffmanTable,
+            sbufPtr(dst) + sizeof(uint16_t) + sizeof(uint8_t) + HUFFMAN_INFO_SIZE, readLen);
 
         uint16_t bytesReadTotal = 0;
         // read until output buffer overflows or flash is exhausted
-        while (state.bytesWritten < state.outBufLen && address + bytesReadTotal < flashfsSize) {
+        while (encoder._bytes < readLen && address + bytesReadTotal < flashfsSize) {
             const int bytesRead = flashfsReadAbs(address + bytesReadTotal, readBuffer,
                 MIN(sizeof(readBuffer), flashfsSize - address - bytesReadTotal));
 
-            const int status = huffmanEncodeBufStreaming(&state, readBuffer, bytesRead, huffmanTable);
-            if (status == -1) {
-                // overflow
+            // A chunk that does not fit is left out of the uncompressed count, so
+            // the decoder stops before its partial codes.
+            if (!pifHuffman_Encode(&encoder, readBuffer, bytesRead)) {
                 break;
             }
 
             bytesReadTotal += bytesRead;
         }
 
-        if (state.outBit != 0x80) {
-            ++state.bytesWritten;
-        }
-
         // header
-        sbufWriteU16(dst, HUFFMAN_INFO_SIZE + state.bytesWritten);
+        sbufWriteU16(dst, HUFFMAN_INFO_SIZE + encoder._bytes);
         sbufWriteU8(dst, compressionMethod);
         // payload
         sbufWriteU16(dst, bytesReadTotal);
-        sbufAdvance(dst, state.bytesWritten);
+        sbufAdvance(dst, encoder._bytes);
 #endif
     }
 }
@@ -2255,22 +2247,22 @@ static mspResult_e mspFcProcessOutCommandWithArg(mspDescriptor_t srcDesc, int16_
             }
             int bytesRemaining = sbufBytesRemaining(dst) - 1; // need to keep one byte for checksum
             mspPacket_t packetIn, packetOut;
-            sbufInit(&packetIn.buf, src->end, src->end);
-            uint8_t* resetInputPtr = src->ptr;
+            sbufInit(&packetIn.buf, src->_p_end, src->_p_end);
+            uint8_t* resetInputPtr = sbufPtr(src);
             while (sbufBytesRemaining(src) && bytesRemaining > 0) {
                 uint8_t newMSP = sbufReadU8(src);
-                sbufInit(&packetOut.buf, dst->ptr, dst->end);
+                sbufInit(&packetOut.buf, sbufPtr(dst), dst->_p_end);
                 packetIn.cmd = newMSP;
                 mspFcProcessCommand(srcDesc, &packetIn, &packetOut, NULL);
-                uint8_t mspSize = sbufPtr(&packetOut.buf) - dst->ptr;
+                uint8_t mspSize = sbufPtr(&packetOut.buf) - sbufPtr(dst);
                 mspSize++; // need to add length information for each MSP
                 bytesRemaining -= mspSize;
                 if (bytesRemaining >= 0) {
                     maxMSPs++;
                 }
             }
-            src->ptr = resetInputPtr;
-            sbufInit(&packetOut.buf, dst->ptr, dst->end);
+            sbufInit(src, resetInputPtr, src->_p_end);
+            sbufInit(&packetOut.buf, sbufPtr(dst), dst->_p_end);
             for (int i = 0; i < maxMSPs; i++) {
                 uint8_t* sizePtr = sbufPtr(&packetOut.buf);
                 sbufWriteU8(&packetOut.buf, 0); // dummy
@@ -2278,7 +2270,7 @@ static mspResult_e mspFcProcessOutCommandWithArg(mspDescriptor_t srcDesc, int16_
                 mspFcProcessCommand(srcDesc, &packetIn, &packetOut, NULL);
                 (*sizePtr) = sbufPtr(&packetOut.buf) - (sizePtr + 1);
             }
-            dst->ptr = packetOut.buf.ptr;
+            sbufInit(dst, sbufPtr(&packetOut.buf), dst->_p_end);
         }
         break;
 

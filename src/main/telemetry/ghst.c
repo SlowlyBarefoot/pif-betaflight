@@ -76,8 +76,7 @@ static uint8_t ghstFrame[GHST_FRAME_SIZE_MAX];
 
 static void ghstInitializeFrame(sbuf_t *dst)
 {
-    dst->ptr = ghstFrame;
-    dst->end = ARRAYEND(ghstFrame);
+    sbufInit(dst, ghstFrame, ARRAYEND(ghstFrame));
 
     sbufWriteU8(dst, GHST_ADDR_RX);
 }

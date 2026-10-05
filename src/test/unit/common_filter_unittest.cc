@@ -33,10 +33,11 @@ TEST(FilterUnittest, TestPt1FilterInit)
 {
     pt1Filter_t filter;
     pt1FilterInit(&filter, 0.0f);
-    EXPECT_EQ(0, filter.k);
+    EXPECT_EQ(1, filter._order);
+    EXPECT_EQ(0, filter._k);
 
     pt1FilterInit(&filter, 1.0f);
-    EXPECT_EQ(1.0, filter.k);
+    EXPECT_EQ(1.0, filter._k);
 }
 
 TEST(FilterUnittest, TestPt1FilterGain)
@@ -50,16 +51,14 @@ TEST(FilterUnittest, TestPt1FilterApply)
 {
     pt1Filter_t filter;
     pt1FilterInit(&filter, pt1FilterGain(100.0f, 31.25f));
-    EXPECT_EQ(0, filter.state);
+    EXPECT_EQ(0, pifPtFilter_Output(&filter));
 
-    pt1FilterApply(&filter, 1800.0f);
-    EXPECT_FLOAT_EQ(1799.9083, filter.state);
+    EXPECT_FLOAT_EQ(1799.9083, pt1FilterApply(&filter, 1800.0f));
+    EXPECT_FLOAT_EQ(1799.9083, pifPtFilter_Output(&filter));
 
-    pt1FilterApply(&filter, -1800.0f);
-    EXPECT_FLOAT_EQ(-1799.8165, filter.state);
+    EXPECT_FLOAT_EQ(-1799.8165, pt1FilterApply(&filter, -1800.0f));
 
-    pt1FilterApply(&filter, -200.0f);
-    EXPECT_FLOAT_EQ(-200.08142, filter.state);
+    EXPECT_FLOAT_EQ(-200.08142, pt1FilterApply(&filter, -200.0f));
 }
 
 TEST(FilterUnittest, TestSlewFilterInit)

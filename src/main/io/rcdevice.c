@@ -152,8 +152,7 @@ static void runcamDeviceSendPacket(runcamDevice_t *device, uint8_t command, uint
 
     sbuf_t buf;
     // prepare pointer
-    buf.ptr = device->buffer;
-    buf.end = ARRAYEND(device->buffer);
+    sbufInit(&buf, device->buffer, ARRAYEND(device->buffer));
 
     sbufWriteU8(&buf, RCDEVICE_PROTOCOL_HEADER);
     sbufWriteU8(&buf, command);

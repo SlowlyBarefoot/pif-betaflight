@@ -22,12 +22,16 @@
 
 #include <stdint.h>
 
-// simple buffer-based serializer/deserializer without implicit size check
+#include "core/pif_stream_buffer.h"
 
-typedef struct sbuf_s {
-    uint8_t *ptr;          // data pointer must be first (sbuf_t* is equivalent to uint8_t **)
-    uint8_t *end;
-} sbuf_t;
+// Buffer-based serializer/deserializer on PIF's PifStreamBuffer. A write or
+// read past the end does nothing and sets _overflow (a read returns 0).
+// The data pointer comes first, so sbuf_t* is still equivalent to uint8_t **.
+
+typedef PifStreamBuffer sbuf_t;
+
+// Initializer for an sbuf_t over [start, stop), for use in aggregate initializers.
+#define SBUF_INIT(start, stop) { ._p_ptr = (start), ._p_end = (stop), ._overflow = FALSE }
 
 sbuf_t *sbufInit(sbuf_t *sbuf, uint8_t *ptr, uint8_t *end);
 

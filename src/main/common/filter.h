@@ -21,26 +21,18 @@
 #pragma once
 #include <stdbool.h>
 
+#include "filter/pif_biquad_filter.h"
+#include "filter/pif_moving_average.h"
+#include "filter/pif_pt_filter.h"
+
 struct filter_s;
 typedef struct filter_s filter_t;
 
-typedef struct pt1Filter_s {
-    float state;
-    float k;
-} pt1Filter_t;
-
-typedef struct pt2Filter_s {
-    float state;
-    float state1;
-    float k;
-} pt2Filter_t;
-
-typedef struct pt3Filter_s {
-    float state;
-    float state1;
-    float state2;
-    float k;
-} pt3Filter_t;
+// PT1, PT2 and PT3 are PIF's PifPtFilter of order 1, 2 and 3. Use
+// pifPtFilter_Output() and pifPtFilter_Reset() to read or set the output.
+typedef PifPtFilter pt1Filter_t;
+typedef PifPtFilter pt2Filter_t;
+typedef PifPtFilter pt3Filter_t;
 
 typedef struct slewFilter_s {
     float state;
@@ -48,20 +40,14 @@ typedef struct slewFilter_s {
     float threshold;
 } slewFilter_t;
 
-/* this holds the data required to update samples thru a filter */
+// A PIF biquad (direct form I) plus the weight that
+// biquadFilterApplyDF1Weighted() crossfades the output with the input by.
 typedef struct biquadFilter_s {
-    float b0, b1, b2, a1, a2;
-    float x1, x2, y1, y2;
+    PifBiquadFilter pif;
     float weight;
 } biquadFilter_t;
 
-typedef struct laggedMovingAverage_s {
-    uint16_t movingWindowIndex;
-    uint16_t windowSize;
-    float movingSum;
-    float *buf;
-    bool primed;
-} laggedMovingAverage_t;
+typedef PifMovingAverage laggedMovingAverage_t;
 
 typedef enum {
     FILTER_PT1 = 0,

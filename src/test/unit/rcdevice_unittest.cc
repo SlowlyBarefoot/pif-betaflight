@@ -864,7 +864,7 @@ extern "C" {
         UNUSED(dst); UNUSED(val); 
 
         if (testData.isAllowBufferReadWrite) {
-            *dst->ptr++ = val;
+            pifStreamBuffer_WriteU8(dst, val);
         }
     }
     
@@ -873,8 +873,7 @@ extern "C" {
         UNUSED(dst); UNUSED(data); UNUSED(len); 
 
         if (testData.isAllowBufferReadWrite) {
-            memcpy(dst->ptr, data, len);
-            dst->ptr += len;
+            pifStreamBuffer_WriteData(dst, data, len);
             
         }
     }
@@ -885,15 +884,14 @@ extern "C" {
         UNUSED(buf); UNUSED(base); 
 
         if (testData.isAllowBufferReadWrite) {
-            buf->end = buf->ptr;
-            buf->ptr = base;
+            pifStreamBuffer_SwitchToReader(buf, base);
         }
     }
 
     uint8_t sbufReadU8(sbuf_t *src)
     {
         if (testData.isAllowBufferReadWrite) {
-            return *src->ptr++;
+            return pifStreamBuffer_ReadU8(src);
         }
 
         return 0;
@@ -902,27 +900,27 @@ extern "C" {
     void sbufAdvance(sbuf_t *buf, int size)
     {
         if (testData.isAllowBufferReadWrite) {
-            buf->ptr += size;
+            pifStreamBuffer_Advance(buf, size);
         }
     }
 
     int sbufBytesRemaining(sbuf_t *buf)
     {
         if (testData.isAllowBufferReadWrite) {
-            return buf->end - buf->ptr;
+            return pifStreamBuffer_Remaining(buf);
         }
         return 0;
     }
 
     const uint8_t* sbufConstPtr(const sbuf_t *buf)
     {
-        return buf->ptr;
+        return buf->_p_ptr;
     }
 
     void sbufReadData(sbuf_t *src, void *data, int len)
     {
         if (testData.isAllowBufferReadWrite) {
-            memcpy(data, src->ptr, len);
+            pifStreamBuffer_ReadData(src, data, len);
         }
     }
 
@@ -975,7 +973,13 @@ extern "C" {
 
     uint8_t* sbufPtr(sbuf_t *buf)
     {
-        return buf->ptr;
+        return buf->_p_ptr;
+    }
+
+    sbuf_t *sbufInit(sbuf_t *sbuf, uint8_t *ptr, uint8_t *end)
+    {
+        pifStreamBuffer_Init(sbuf, ptr, end - ptr);
+        return sbuf;
     }
 
     uint32_t sbufReadU32(sbuf_t *src)

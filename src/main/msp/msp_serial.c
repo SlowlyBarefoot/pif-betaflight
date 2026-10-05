@@ -190,16 +190,16 @@ static mspPostProcessFnPtr mspSerialProcessReceivedCommand(mspPort_t *msp, PifMs
     static uint8_t mspSerialOutBuf[MSP_PORT_OUTBUF_SIZE];
 
     mspPacket_t reply = {
-        .buf = { .ptr = mspSerialOutBuf, .end = ARRAYEND(mspSerialOutBuf), },
+        .buf = SBUF_INIT(mspSerialOutBuf, ARRAYEND(mspSerialOutBuf)),
         .cmd = -1,
         .flags = 0,
         .result = 0,
         .direction = MSP_DIRECTION_REPLY,
     };
-    uint8_t *outBufHead = reply.buf.ptr;
+    uint8_t *outBufHead = sbufPtr(&reply.buf);
 
     mspPacket_t command = {
-        .buf = { .ptr = packet->p_data, .end = packet->p_data + packet->data_count, },
+        .buf = SBUF_INIT(packet->p_data, packet->p_data + packet->data_count),
         .cmd = packet->command,
         .flags = packet->flags,
         .result = 0,
@@ -264,10 +264,7 @@ static void mspProcessPendingRequest(mspPort_t * mspPort)
 static void mspSerialProcessReceivedReply(PifMspPacket *packet, mspProcessReplyFnPtr mspProcessReplyFn)
 {
     mspPacket_t reply = {
-        .buf = {
-            .ptr = packet->p_data,
-            .end = packet->p_data + packet->data_count,
-        },
+        .buf = SBUF_INIT(packet->p_data, packet->p_data + packet->data_count),
         .cmd = packet->command,
         .result = 0,
     };
@@ -362,7 +359,7 @@ int mspSerialPush(serialPortIdentifier_e port, uint8_t cmd, uint8_t *data, int d
         }
 
         mspPacket_t push = {
-            .buf = { .ptr = data, .end = data + datalen, },
+            .buf = SBUF_INIT(data, data + datalen),
             .cmd = cmd,
             .result = 0,
             .direction = direction,

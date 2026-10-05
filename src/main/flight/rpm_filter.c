@@ -201,11 +201,7 @@ FAST_CODE_NOINLINE void rpmFilterUpdate(void)
 
         for (int axis = 1; axis < XYZ_AXIS_COUNT; axis++) {
             biquadFilter_t *clone = &currentFilter->notch[axis][currentMotor][currentHarmonic];
-            clone->b0 = template->b0;
-            clone->b1 = template->b1;
-            clone->b2 = template->b2;
-            clone->a1 = template->a1;
-            clone->a2 = template->a2;
+            pifBiquadFilter_CopyCoefficients(&clone->pif, &template->pif);
             clone->weight = template->weight;
         }
 

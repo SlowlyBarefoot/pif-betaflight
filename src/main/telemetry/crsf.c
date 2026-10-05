@@ -196,8 +196,7 @@ bool handleCrsfMspFrameBuffer(mspResponseFnPtr responseFn)
 
 static void crsfInitializeFrame(sbuf_t *dst)
 {
-    dst->ptr = crsfFrame;
-    dst->end = ARRAYEND(crsfFrame);
+    sbufInit(dst, crsfFrame, ARRAYEND(crsfFrame));
 
     sbufWriteU8(dst, CRSF_SYNC_BYTE);
 }
@@ -520,7 +519,7 @@ static void cRleEncodeStream(sbuf_t *source, sbuf_t *dest, uint8_t maxDestLen)
     while (sbufBytesRemaining(source) && (sbufPtr(dest) < destEnd)) {
         const uint8_t destRemaining = destEnd - sbufPtr(dest);
         const uint8_t *srcPtr = sbufPtr(source);
-        const uint16_t runLength = getRunLength(srcPtr, source->end);
+        const uint16_t runLength = getRunLength(srcPtr, source->_p_end);
         uint8_t c = *srcPtr;
         if (runLength > 1) {
             c |=  CRSF_RLE_CHAR_REPEATED_MASK;

@@ -131,8 +131,7 @@ static mspDescriptor_t mspSharedDescriptor = -1;
 
 void initSharedMsp(void)
 {
-    responsePacket.buf.ptr = responseBuffer;
-    responsePacket.buf.end = ARRAYEND(responseBuffer);
+    sbufInit(&responsePacket.buf, responseBuffer, ARRAYEND(responseBuffer));
 
     mspSharedDescriptor = mspDescriptorAlloc();
 }
@@ -146,8 +145,7 @@ static void processMspPacket(void)
 {
     responsePacket.cmd = 0;
     responsePacket.result = 0;
-    responsePacket.buf.ptr = responseBuffer;
-    responsePacket.buf.end = ARRAYEND(responseBuffer);
+    sbufInit(&responsePacket.buf, responseBuffer, ARRAYEND(responseBuffer));
 
     mspPostProcessFnPtr mspPostProcessFn = NULL;
     if (mspFcProcessCommand(mspSharedDescriptor, &requestPacket, &responsePacket, &mspPostProcessFn) == MSP_RESULT_ERROR) {
@@ -164,7 +162,7 @@ void sendMspErrorResponse(uint8_t error, int16_t cmd)
 {
     responsePacket.cmd = cmd;
     responsePacket.result = 0;
-    responsePacket.buf.ptr = responseBuffer;
+    sbufInit(&responsePacket.buf, responseBuffer, ARRAYEND(responseBuffer));
 
     sbufWriteU8(&responsePacket.buf, error);
     responsePacket.result = TELEMETRY_MSP_RES_ERROR;
@@ -222,8 +220,7 @@ bool handleMspFrame(uint8_t *const payload, uint8_t const payloadLength, uint8_t
         }
         if (mspPayloadSize <= sizeof(requestBuffer)) { // prevent buffer overrun
             requestPacket.result = 0;
-            requestPacket.buf.ptr = requestBuffer;
-            requestPacket.buf.end = requestBuffer + mspPayloadSize;
+            sbufInit(&requestPacket.buf, requestBuffer, requestBuffer + mspPayloadSize);
             mspStarted = 1;
         } else { // this MSP packet is too big to fit in the buffer.
             sendMspErrorResponse(TELEMETRY_MSP_REQUEST_IS_TOO_BIG, requestPacket.cmd);
@@ -248,12 +245,12 @@ bool handleMspFrame(uint8_t *const payload, uint8_t const payloadLength, uint8_t
     const int payloadIncoming = sbufBytesRemaining(&sbufInput);
 
     if (payloadExpecting > payloadIncoming) {
-        sbufWriteData(&requestPacket.buf, sbufInput.ptr, payloadIncoming);
+        sbufWriteData(&requestPacket.buf, sbufPtr(&sbufInput), payloadIncoming);
         sbufAdvance(&sbufInput, payloadIncoming);
         return false;
     } else { // this is the last/only chunk 
         if (payloadExpecting) {
-            sbufWriteData(&requestPacket.buf, sbufInput.ptr, payloadExpecting);
+            sbufWriteData(&requestPacket.buf, sbufPtr(&sbufInput), payloadExpecting);
             sbufAdvance(&sbufInput, payloadExpecting);
         }
     }
@@ -278,7 +275,7 @@ bool sendMspReply(const uint8_t payloadSizeMax, mspResponseFnPtr responseFn)
     sbuf_t *payloadBuf = sbufInit(&payloadBufStruct, payloadArray, payloadArray + payloadSizeMax);
 
     // detect first reply packet
-    if (responsePacket.buf.ptr == responseBuffer) {
+    if (sbufPtr(&responsePacket.buf) == responseBuffer) {
         // this is the first frame of the response packet. Add proper header and size.
         // header
         uint8_t status = MSP_STATUS_START_MASK | (seq++ & MSP_STATUS_SEQUENCE_MASK) | (lastRequestVersion << MSP_STATUS_VERSION_SHIFT);
@@ -312,17 +309,17 @@ bool sendMspReply(const uint8_t payloadSizeMax, mspResponseFnPtr responseFn)
 
     if (inputRemainder >= chunkRemainder) {
         // partial send
-        sbufWriteData(payloadBuf, responsePacket.buf.ptr, chunkRemainder);
+        sbufWriteData(payloadBuf, sbufPtr(&responsePacket.buf), chunkRemainder);
         sbufAdvance(&responsePacket.buf, chunkRemainder);
         responseFn(payloadArray, payloadSizeMax);
         return true;
     }
     // last/only chunk
-    sbufWriteData(payloadBuf, responsePacket.buf.ptr, inputRemainder);
+    sbufWriteData(payloadBuf, sbufPtr(&responsePacket.buf), inputRemainder);
     sbufAdvance(&responsePacket.buf, inputRemainder);
     sbufSwitchToReader(&responsePacket.buf, responseBuffer);// for CRC calculation
 
-    responseFn(payloadArray, payloadBuf->ptr - payloadArray);
+    responseFn(payloadArray, sbufPtr(payloadBuf) - payloadArray);
     return false;
 }
 

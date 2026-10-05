@@ -539,8 +539,7 @@ bool srxl2TelemetryRequested(void)
 
 void srxl2InitializeFrame(sbuf_t *dst)
 {
-    dst->ptr = telemetryFrame;
-    dst->end = ARRAYEND(telemetryFrame);
+    sbufInit(dst, telemetryFrame, ARRAYEND(telemetryFrame));
 
     sbufWriteU8(dst, SRXL2_ID);
     sbufWriteU8(dst, TelemetrySensorData);

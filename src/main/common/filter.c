@@ -29,7 +29,13 @@
 #include "common/maths.h"
 #include "common/utils.h"
 
-#define BIQUAD_Q 1.0f / sqrtf(2.0f)     /* quality factor - 2nd order butterworth*/
+// PT1, PT2 and PT3 low pass filters, by PIF's pif_pt_filter
+
+static void ptFilterInit(PifPtFilter *filter, uint8_t order, float k)
+{
+    pifPtFilter_Init(filter, order, 0.0f, 1.0f);
+    pifPtFilter_SetGain(filter, k);
+}
 
 // NULL filter
 
@@ -44,89 +50,66 @@ FAST_CODE float nullFilterApply(filter_t *filter, float input)
 
 float pt1FilterGain(float f_cut, float dT)
 {
-    float RC = 1 / (2 * M_PIf * f_cut);
-    return dT / (RC + dT);
+    return pifPtFilter_Gain(1, f_cut, dT);
 }
 
 void pt1FilterInit(pt1Filter_t *filter, float k)
 {
-    filter->state = 0.0f;
-    filter->k = k;
+    ptFilterInit(filter, 1, k);
 }
 
 void pt1FilterUpdateCutoff(pt1Filter_t *filter, float k)
 {
-    filter->k = k;
+    pifPtFilter_SetGain(filter, k);
 }
 
 FAST_CODE float pt1FilterApply(pt1Filter_t *filter, float input)
 {
-    filter->state = filter->state + filter->k * (input - filter->state);
-    return filter->state;
+    return pifPtFilter_Apply(filter, input);
 }
 
 // PT2 Low Pass filter
 
 float pt2FilterGain(float f_cut, float dT)
 {
-    const float order = 2.0f;
-    const float orderCutoffCorrection = 1 / sqrtf(powf(2, 1.0f / order) - 1);
-    float RC = 1 / (2 * orderCutoffCorrection * M_PIf * f_cut);
-    // float RC = 1 / (2 * 1.553773974f * M_PIf * f_cut);
-    // where 1.553773974 = 1 / sqrt( (2^(1 / order) - 1) ) and order is 2
-    return dT / (RC + dT);
+    return pifPtFilter_Gain(2, f_cut, dT);
 }
 
 void pt2FilterInit(pt2Filter_t *filter, float k)
 {
-    filter->state = 0.0f;
-    filter->state1 = 0.0f;
-    filter->k = k;
+    ptFilterInit(filter, 2, k);
 }
 
 void pt2FilterUpdateCutoff(pt2Filter_t *filter, float k)
 {
-    filter->k = k;
+    pifPtFilter_SetGain(filter, k);
 }
 
 FAST_CODE float pt2FilterApply(pt2Filter_t *filter, float input)
 {
-    filter->state1 = filter->state1 + filter->k * (input - filter->state1);
-    filter->state = filter->state + filter->k * (filter->state1 - filter->state);
-    return filter->state;
+    return pifPtFilter_Apply(filter, input);
 }
 
 // PT3 Low Pass filter
 
 float pt3FilterGain(float f_cut, float dT)
 {
-    const float order = 3.0f;
-    const float orderCutoffCorrection = 1 / sqrtf(powf(2, 1.0f / order) - 1);
-    float RC = 1 / (2 * orderCutoffCorrection * M_PIf * f_cut);
-    // float RC = 1 / (2 * 1.961459177f * M_PIf * f_cut);
-    // where 1.961459177 = 1 / sqrt( (2^(1 / order) - 1) ) and order is 3
-    return dT / (RC + dT);
+    return pifPtFilter_Gain(3, f_cut, dT);
 }
 
 void pt3FilterInit(pt3Filter_t *filter, float k)
 {
-    filter->state = 0.0f;
-    filter->state1 = 0.0f;
-    filter->state2 = 0.0f;
-    filter->k = k;
+    ptFilterInit(filter, 3, k);
 }
 
 void pt3FilterUpdateCutoff(pt3Filter_t *filter, float k)
 {
-    filter->k = k;
+    pifPtFilter_SetGain(filter, k);
 }
 
 FAST_CODE float pt3FilterApply(pt3Filter_t *filter, float input)
 {
-    filter->state1 = filter->state1 + filter->k * (input - filter->state1);
-    filter->state2 = filter->state2 + filter->k * (filter->state1 - filter->state2);
-    filter->state = filter->state + filter->k * (filter->state2 - filter->state);
-    return filter->state;
+    return pifPtFilter_Apply(filter, input);
 }
 
 
@@ -156,140 +139,82 @@ FAST_CODE float slewFilterApply(slewFilter_t *filter, float input)
 }
 
 // get notch filter Q given center frequency (f0) and lower cutoff frequency (f1)
-// Q = f0 / (f2 - f1) ; f2 = f0^2 / f1
 float filterGetNotchQ(float centerFreq, float cutoffFreq)
 {
-    return centerFreq * cutoffFreq / (centerFreq * centerFreq - cutoffFreq * cutoffFreq);
+    return pifBiquadFilter_NotchQ(centerFreq, cutoffFreq);
+}
+
+// Biquad filters, by PIF's pif_biquad_filter. refreshRate is the sample period in us.
+
+static PifBiquadFilterType biquadPifType(biquadFilterType_e filterType)
+{
+    switch (filterType) {
+    case FILTER_NOTCH:
+        return BQFT_NOTCH;
+    case FILTER_BPF:
+        return BQFT_BANDPASS;
+    case FILTER_LPF:
+    default:
+        return BQFT_LOWPASS;
+    }
 }
 
 /* sets up a biquad filter as a 2nd order butterworth LPF */
 void biquadFilterInitLPF(biquadFilter_t *filter, float filterFreq, uint32_t refreshRate)
 {
-    biquadFilterInit(filter, filterFreq, refreshRate, BIQUAD_Q, FILTER_LPF, 1.0f);
+    biquadFilterInit(filter, filterFreq, refreshRate, PIF_BIQUAD_Q_BUTTERWORTH, FILTER_LPF, 1.0f);
 }
 
+// A frequency at or above Nyquist leaves the filter passing the input through.
 void biquadFilterInit(biquadFilter_t *filter, float filterFreq, uint32_t refreshRate, float Q, biquadFilterType_e filterType, float weight)
 {
-    biquadFilterUpdate(filter, filterFreq, refreshRate, Q, filterType, weight);
-
-    // zero initial samples
-    filter->x1 = filter->x2 = 0;
-    filter->y1 = filter->y2 = 0;
+    pifBiquadFilter_Init(&filter->pif, biquadPifType(filterType), filterFreq, 1e6f / refreshRate, Q);
+    filter->weight = weight;
 }
 
+// A frequency at or above Nyquist keeps the previous coefficients.
 FAST_CODE void biquadFilterUpdate(biquadFilter_t *filter, float filterFreq, uint32_t refreshRate, float Q, biquadFilterType_e filterType, float weight)
 {
-    // setup variables
-    const float omega = 2.0f * M_PIf * filterFreq * refreshRate * 0.000001f;
-    const float sn = sin_approx(omega);
-    const float cs = cos_approx(omega);
-    const float alpha = sn / (2.0f * Q);
-
-    switch (filterType) {
-    case FILTER_LPF:
-        // 2nd order Butterworth (with Q=1/sqrt(2)) / Butterworth biquad section with Q
-        // described in http://www.ti.com/lit/an/slaa447/slaa447.pdf
-        filter->b1 = 1 - cs;
-        filter->b0 = filter->b1 * 0.5f;
-        filter->b2 = filter->b0;
-        filter->a1 = -2 * cs;
-        filter->a2 = 1 - alpha;
-        break;
-    case FILTER_NOTCH:
-        filter->b0 = 1;
-        filter->b1 = -2 * cs;
-        filter->b2 = 1;
-        filter->a1 = filter->b1;
-        filter->a2 = 1 - alpha;
-        break;
-    case FILTER_BPF:
-        filter->b0 = alpha;
-        filter->b1 = 0;
-        filter->b2 = -alpha;
-        filter->a1 = -2 * cs;
-        filter->a2 = 1 - alpha;
-        break;
-    }
-
-    const float a0 = 1 + alpha;
-
-    // precompute the coefficients
-    filter->b0 /= a0;
-    filter->b1 /= a0;
-    filter->b2 /= a0;
-    filter->a1 /= a0;
-    filter->a2 /= a0;
-
-    // update weight
+    pifBiquadFilter_Update(&filter->pif, biquadPifType(filterType), filterFreq, 1e6f / refreshRate, Q);
     filter->weight = weight;
 }
 
 FAST_CODE void biquadFilterUpdateLPF(biquadFilter_t *filter, float filterFreq, uint32_t refreshRate)
 {
-    biquadFilterUpdate(filter, filterFreq, refreshRate, BIQUAD_Q, FILTER_LPF, 1.0f);
+    biquadFilterUpdate(filter, filterFreq, refreshRate, PIF_BIQUAD_Q_BUTTERWORTH, FILTER_LPF, 1.0f);
 }
 
-/* Computes a biquadFilter_t filter on a sample (slightly less precise than df2 but works in dynamic mode) */
 FAST_CODE float biquadFilterApplyDF1(biquadFilter_t *filter, float input)
 {
-    /* compute result */
-    const float result = filter->b0 * input + filter->b1 * filter->x1 + filter->b2 * filter->x2 - filter->a1 * filter->y1 - filter->a2 * filter->y2;
-
-    /* shift x1 to x2, input to x1 */
-    filter->x2 = filter->x1;
-    filter->x1 = input;
-
-    /* shift y1 to y2, result to y1 */
-    filter->y2 = filter->y1;
-    filter->y1 = result;
-
-    return result;
+    return pifBiquadFilter_Apply(&filter->pif, input);
 }
 
 /* Computes a biquadFilter_t filter in df1 and crossfades input with output */
 FAST_CODE float biquadFilterApplyDF1Weighted(biquadFilter_t* filter, float input)
 {
-    // compute result
-    const float result = biquadFilterApplyDF1(filter, input);
+    const float result = pifBiquadFilter_Apply(&filter->pif, input);
 
     // crossfading of input and output to turn filter on/off gradually
     return filter->weight * result + (1 - filter->weight) * input;
 }
 
-/* Computes a biquadFilter_t filter in direct form 2 on a sample (higher precision but can't handle changes in coefficients */
+// PIF runs every biquad in direct form I, which also copes with coefficient changes.
 FAST_CODE float biquadFilterApply(biquadFilter_t *filter, float input)
 {
-    const float result = filter->b0 * input + filter->x1;
-
-    filter->x1 = filter->b1 * input - filter->a1 * result + filter->x2;
-    filter->x2 = filter->b2 * input - filter->a2 * result;
-
-    return result;
+    return pifBiquadFilter_Apply(&filter->pif, input);
 }
+
+// Moving average, by PIF's pif_moving_average. Until the window is full, the
+// average is over the samples added so far.
 
 void laggedMovingAverageInit(laggedMovingAverage_t *filter, uint16_t windowSize, float *buf)
 {
-    filter->movingWindowIndex = 0;
-    filter->windowSize = windowSize;
-    filter->buf = buf;
-    filter->movingSum = 0;
-    memset(filter->buf, 0, windowSize * sizeof(float));
-    filter->primed = false;
+    pifMovingAverage_Init(filter, buf, windowSize);
 }
 
 FAST_CODE float laggedMovingAverageUpdate(laggedMovingAverage_t *filter, float input)
 {
-    filter->movingSum -= filter->buf[filter->movingWindowIndex];
-    filter->buf[filter->movingWindowIndex] = input;
-    filter->movingSum += input;
-
-    if (++filter->movingWindowIndex == filter->windowSize) {
-        filter->movingWindowIndex = 0;
-        filter->primed = true;
-    }
-
-    const uint16_t denom = filter->primed ? filter->windowSize : filter->movingWindowIndex;
-    return filter->movingSum  / denom;
+    return pifMovingAverage_Apply(filter, input);
 }
 
 // Simple fixed-point lowpass filter based on integer math

@@ -480,13 +480,15 @@ endif
 # -Wno-c99-extensions
 # -Wno-reorder
 
-# PIF, reached from scheduler.h: core/pif.h for the types, and src/main/pif
-# for the pif_conf.h that core/pif.h includes by that bare name. Mirrors the
-# PIF_DIR of make/pif.mk and is overridable the same way.
+# PIF, reached from scheduler.h: core/pif.h for the types, gpl/include for
+# the GPL-3.0 modules, and src/main/pif for the pif_conf.h that core/pif.h
+# includes by that bare name. Mirrors the PIF_DIR of make/pif.mk and is
+# overridable the same way. The PIF sources the tests run are in pif.a below.
 PIF_DIR ?= $(ROOT)/../pif
 
 COMMON_FLAGS = \
 	-I$(PIF_DIR)/include \
+	-I$(PIF_DIR)/gpl/include \
 	-I$(USER_DIR)/pif \
 	-g \
 	-Wall \
@@ -674,6 +676,32 @@ $(OBJECT_DIR)/gtest_main.a : $(OBJECT_DIR)/gtest-all.o $(OBJECT_DIR)/gtest_main.
          $(OBJECT_DIR)/gtest_main.d
 
 
+# PIF sources that the code under test calls into. They go into one archive,
+# so each test links only the modules it uses.
+PIF_TEST_SOURCES = $(addprefix $(PIF_DIR)/source/, \
+	codec/pif_encoding.c \
+	codec/pif_huffman.c \
+	core/pif.c \
+	core/pif_obj_array.c \
+	core/pif_task.c \
+	core/pif_task_manager.c \
+	core/pif_math.c \
+	core/pif_stream_buffer.c \
+	filter/pif_biquad_filter.c \
+	filter/pif_moving_average.c \
+	filter/pif_pt_filter.c)
+PIF_TEST_OBJS = $(patsubst $(PIF_DIR)/source/%.c,$(OBJECT_DIR)/pif/%.o,$(PIF_TEST_SOURCES))
+
+$(OBJECT_DIR)/pif/%.o: $(PIF_DIR)/source/%.c
+	@echo "compiling $<" "$(STDOUT)"
+	@mkdir -p $(dir $@)
+	$(V1) $(CC) $(C_FLAGS) -c $< -o $@
+
+$(OBJECT_DIR)/pif.a : $(PIF_TEST_OBJS)
+	@echo "linking $@" "$(STDOUT)"
+	$(V1) $(AR) $(ARFLAGS) $@ $^
+
+
 # includes in test dir must override includes in user dir, unless the user
 # specifies a list of endorsed directories in ${target}_INCLUDE_DIRS.
 test_include_dirs  = $1 $(TEST_DIR) $(USER_DIR)
@@ -756,7 +784,8 @@ $(OBJECT_DIR)/$1/$(basename $1).o: $(TEST_DIR)/$(basename $1).cc
 
 $(OBJECT_DIR)/$1/$(basename $1): $$($1_OBJS) \
 	$(OBJECT_DIR)/$1/$(basename $1).o \
-	$(OBJECT_DIR)/gtest_main.a
+	$(OBJECT_DIR)/gtest_main.a \
+	$(OBJECT_DIR)/pif.a
 
 	@echo "linking $$@" "$(STDOUT)"
 	$(V1) mkdir -p $(dir $$@)
