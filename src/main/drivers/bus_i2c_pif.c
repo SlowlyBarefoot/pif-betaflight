@@ -41,7 +41,7 @@ static I2CDevice i2cPifPortDevice(const PifI2cDevice *pDevice)
 // given 0xFF (the F4 driver and the HAL one both take it so), so a transfer
 // with any other internal address size cannot be expressed. With no register
 // address (isize 0) only pData goes over the bus: the commands of pif_ms5611
-// and the probe of pifI2cPort_ScanAddress() are sent so. Register 0xFF itself
+// are sent so. Register 0xFF itself
 // cannot be reached, so a transfer to it fails rather than going out as one
 // with no register address.
 #define I2C_PIF_NO_REGISTER     0xFF

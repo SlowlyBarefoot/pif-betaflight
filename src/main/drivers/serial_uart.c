@@ -193,7 +193,6 @@ void uartResetRxDmaBuffer(uartPort_t *uartPort)
     // same memory is the only way PifRingBuffer offers to get there.
     pifRingBuffer_InitStatic(rxBuffer, rxBuffer->_id, rxBuffer->_size, (uint8_t *)uartPort->port.rxBuffer);
     pifRingBuffer_SetName(rxBuffer, "RB");
-    uartPort->rxDMAPos = 0;
 }
 
 // Moves the PifUart RX head up to where the RX DMA has written. Only runs in
@@ -209,13 +208,7 @@ static void uartSyncRxDma(uartPort_t *uartPort)
 #endif
 
     // The counter runs down from the buffer size and is reloaded after 1.
-    const uint32_t pos = (size - counter) % size;
-    const uint32_t count = (pos + size - uartPort->rxDMAPos) % size;
-
-    if (count) {
-        pifRingBuffer_MoveHead(uartPort->uart._p_rx_buffer, count);
-        uartPort->rxDMAPos = pos;
-    }
+    pifRingBuffer_SetHead(uartPort->uart._p_rx_buffer, (size - counter) % size);
 }
 #endif
 

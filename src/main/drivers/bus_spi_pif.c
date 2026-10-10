@@ -160,9 +160,9 @@ static BOOL spiPifActStartTransfer(PifSpiDevice *pDevice, uint8_t *pWrite, uint8
     return TRUE;
 }
 
-// Betaflight's SPI register API always sends a one byte register address, and
-// no max_transfer_size is set, so PIF never splits a transfer into pieces that
-// continue without one.
+// Betaflight's SPI register API always sends a one byte register address. No
+// max_transfer_size is set, so PIF never splits a transfer; were it set, each
+// piece would come with its own register address.
 
 // The register address is sent with bit 7 set, as busReadRegisterBuffer()
 // does, which is the read flag of the chips on these buses.

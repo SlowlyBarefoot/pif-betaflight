@@ -62,10 +62,6 @@ typedef struct uartPort_s {
     uint32_t rxDMAIrq;
     uint32_t txDMAIrq;
 
-    // Buffer index the RX DMA had written up to when the PifUart RX head was
-    // last moved after it. The DMA writes the RX buffer memory from index 0,
-    // see uartRxDmaStart().
-    uint32_t rxDMAPos;
     // Bytes the running TX DMA transfer takes from the PifUart TX buffer. They
     // stay in the buffer until the transfer is over, and are removed by the
     // next uartTryStartTxDMA().
