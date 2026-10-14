@@ -62,6 +62,7 @@ PIF_SRC = \
             pif_timer.c \
             pif_timer_manager.c \
             pif_i2c.c \
+            pif_transport.c \
             pif_uart.c \
             pif_imu_sensor.c \
             pif_qmc5883.c \
