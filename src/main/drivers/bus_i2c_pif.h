@@ -25,7 +25,7 @@
  * I2CDevice one on top of drivers/bus_i2c.h, so a PIF driver shares the bus
  * with the Betaflight drivers on it and works on every I2C implementation.
  * Transfers start with i2cReadBuffer()/i2cWriteBuffer() and are polled to the
- * end through act_check, which lets pifI2cDevice_StartRead() run without
+ * end through act_check, which lets pifDeviceReg_StartRead() run without
  * blocking. A transfer that times out is handed to i2cRecover() through
  * act_recover.
  */

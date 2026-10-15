@@ -179,7 +179,7 @@ void IORelease() {
 bool pifLinker_IsReady(void) { return false; }
 void *i2cPifPort() { return NULL; }
 void *pifI2cPort_TemporaryDevice() { return NULL; }
-uint8_t pifI2cDevice_ReadRegBytes() { return 0; }
+uint8_t pifDeviceReg_ReadRegBytes() { return 0; }
 uint8_t pifMs5611_Init() { return 0; }
 void pifMs5611_Clear() {}
 void pifMs5611_SetOverSamplingRate() {}

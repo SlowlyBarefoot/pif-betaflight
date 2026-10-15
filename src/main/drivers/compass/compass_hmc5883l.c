@@ -282,7 +282,7 @@ static bool hmc5883lI2cInit(magDev_t *mag)
         return false;
     }
 
-    if (hmc5883._p_i2c) {
+    if (hmc5883._p_device) {
         pifHmc5883_Clear(&hmc5883);
     }
     if (!pifHmc5883_Init(&hmc5883, PIF_ID_AUTO, port, NULL, &g_imu_sensor)) {
@@ -290,7 +290,7 @@ static bool hmc5883lI2cInit(magDev_t *mag)
     }
 
     // Configuration Register A  -- 0 11 100 00  num samples: 8 ; output rate: 15Hz ; normal measurement mode
-    if (!pifI2cDevice_WriteRegByte(hmc5883._p_i2c, HMC5883_REG_CONFIG_A,
+    if (!pifDeviceReg_WriteRegByte(hmc5883._p_device, HMC5883_REG_CONFIG_A,
             HMC5883_SAMPLES_8 | HMC5883_DATARATE_15HZ | HMC5883_MEASURE_MODE_NORMAL)) {
         return false;
     }

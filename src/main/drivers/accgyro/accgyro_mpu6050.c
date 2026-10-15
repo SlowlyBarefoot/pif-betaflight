@@ -61,7 +61,7 @@ static PifMpu60x0 mpu6050;
 
 static void mpu6050RegisterWrite(PifMpu60x0Reg registerId, uint8_t value)
 {
-    (mpu6050._fn.write_byte)(mpu6050._fn.p_device, registerId, value);
+    pifDeviceReg_WriteRegByte(mpu6050._p_device, registerId, value);
 }
 
 static void mpu6050AccInit(accDev_t *acc)
@@ -88,7 +88,7 @@ static bool mpu6050GyroRead(gyroDev_t *gyro)
 
 bool mpu6050AccDetect(accDev_t *acc)
 {
-    if (acc->mpuDetectionResult.sensor != MPU_60x0 || !mpu6050._p_i2c) {
+    if (acc->mpuDetectionResult.sensor != MPU_60x0 || !mpu6050._p_device) {
         return false;
     }
 
@@ -144,7 +144,7 @@ bool mpu6050GyroDetect(gyroDev_t *gyro)
     // rather than in initFn so that running out of PifI2cDevice slots fails
     // detection instead of leaving a gyro that cannot be read.
     PifI2cPort *port = i2cPifPort(gyro->dev.bus->busType_u.i2c.device);
-    if (mpu6050._p_i2c) {
+    if (mpu6050._p_device) {
         pifMpu60x0I2c_Clear(&mpu6050);
     }
     if (!port || !pifMpu60x0I2c_Init(&mpu6050, PIF_ID_AUTO, port, gyro->dev.busType_u.i2c.address, NULL, &g_imu_sensor)) {

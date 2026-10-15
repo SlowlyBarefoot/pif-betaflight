@@ -141,6 +141,31 @@ static displayPortBackground_e deviceBackgroundType = DISPLAY_BACKGROUND_TRANSPA
 
 PifMax7456 max7456;
 
+#define max7456SpiDevice() ((PifSpiDevice *)max7456._p_device)
+
+// A screen sent by DMA holds the PIF port until pifDeviceReg_CheckTransfer()
+// reports it over. It is asked from the SPI DMA interrupt as soon as the
+// transfer ends, so the register reads and writes go through again.
+static void max7456TransferDone(void *arg)
+{
+    UNUSED(arg);
+
+    pifDeviceReg_CheckTransfer(max7456._p_device);
+}
+
+// Asks pifDeviceReg_CheckTransfer() too, for a transfer that ended without
+// the interrupt. The bus may also carry a transfer of another device.
+static bool max7456SpiBusy(void)
+{
+    if (!max7456._p_device) {
+        return false;
+    }
+
+    pifDeviceReg_CheckTransfer(max7456._p_device);
+
+    return pifDeviceReg_IsBusy(max7456._p_device) || spiIsBusy(dev);
+}
+
 static uint8_t *getLayerBuffer(displayPortLayer_e layer)
 {
     return displayLayers[layer].buffer;
@@ -171,7 +196,7 @@ static void max7456SetRegisterVM1(void)
         }
     }
     vm1Register |= backgroundGray;
-    pifSpiDevice_WriteRegByte(max7456._p_spi, MAX7456_REG_W_VM1, vm1Register);
+    pifDeviceReg_WriteRegByte(max7456._p_device, MAX7456_REG_W_VM1, vm1Register);
 }
 
 uint8_t max7456GetRowsCount(void)
@@ -206,7 +231,7 @@ void max7456ReInit(void)
         break;
 
     case VIDEO_SYSTEM_AUTO:
-        pifSpiDevice_ReadRegByte(max7456._p_spi, MAX7456_REG_R_STAT, &srdata);
+        pifDeviceReg_ReadRegByte(max7456._p_device, MAX7456_REG_R_STAT, &srdata);
 
         if (VIN_IS_NTSC(srdata)) {
             videoSignalReg = MAX7456_VIDEO_STANDARD_SELECT_NTSC | MAX7456_ENABLE_DISP_OSD_IMAGE(1);
@@ -231,9 +256,9 @@ void max7456ReInit(void)
     // Re-enable MAX7456 (last function call disables it)
 
     // Make sure the Max7456 is enabled
-    pifSpiDevice_WriteRegByte(max7456._p_spi, MAX7456_REG_W_VM0, videoSignalReg);
-    pifSpiDevice_WriteRegByte(max7456._p_spi, MAX7456_REG_W_HOS, hosRegValue);
-    pifSpiDevice_WriteRegByte(max7456._p_spi, MAX7456_REG_W_VOS, vosRegValue);
+    pifDeviceReg_WriteRegByte(max7456._p_device, MAX7456_REG_W_VM0, videoSignalReg);
+    pifDeviceReg_WriteRegByte(max7456._p_device, MAX7456_REG_W_HOS, hosRegValue);
+    pifDeviceReg_WriteRegByte(max7456._p_device, MAX7456_REG_W_VOS, vosRegValue);
 
     max7456SetRegisterVM1();
 
@@ -282,6 +307,10 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
     if (!port || !pifMax7456_Init(&max7456, PIF_ID_AUTO, port, dev)) {
         return MAX7456_INIT_NOT_CONFIGURED;
     }
+    if (!spiPifAttachTransferDone(max7456SpiDevice(), max7456TransferDone, NULL)) {
+        pifMax7456_Clear(&max7456);
+        return MAX7456_INIT_NOT_CONFIGURED;
+    }
 
     if (!IOIsFreeOrPreinit(dev->busType_u.spi.csnPin)) {
         return MAX7456_INIT_NOT_CONFIGURED;
@@ -300,11 +329,11 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
 
     // Write 0xff to conclude any current SPI transaction the MAX7456 is expecting
     data = END_STRING;
-    pifSpiDevice_Transfer(max7456._p_spi, &data, NULL, sizeof(data));
+    pifSpiDevice_Transfer(max7456SpiDevice(), &data, NULL, sizeof(data));
 
     uint8_t osdm;
 
-    if (!pifSpiDevice_ReadRegByte(max7456._p_spi, MAX7456_REG_R_OSDM, &osdm) || osdm != 0x1B) {
+    if (!pifDeviceReg_ReadRegByte(max7456._p_device, MAX7456_REG_R_OSDM, &osdm) || osdm != 0x1B) {
         IOConfigGPIO(dev->busType_u.spi.csnPin, IOCFG_IPU);
         return MAX7456_INIT_NOT_FOUND;
     }
@@ -316,9 +345,9 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
     // Detect device type by writing and reading CA[8] bit at CMAL[6].
     // This is a bit for accessing second half of character glyph storage, supported only by AT variant.
 
-    pifSpiDevice_WriteRegByte(max7456._p_spi, MAX7456_REG_W_CMAL, (1 << 6));
+    pifDeviceReg_WriteRegByte(max7456._p_device, MAX7456_REG_W_CMAL, (1 << 6));
 
-    if (pifSpiDevice_ReadRegByte(max7456._p_spi, MAX7456_REG_R_CMAL, &data) && (data & (1 << 6))) {
+    if (pifDeviceReg_ReadRegByte(max7456._p_device, MAX7456_REG_R_CMAL, &data) && (data & (1 << 6))) {
         max7456DeviceType = MAX7456_DEVICE_TYPE_AT;
     } else {
         max7456DeviceType = MAX7456_DEVICE_TYPE_MAX;
@@ -355,13 +384,13 @@ max7456InitStatus_e max7456Init(const max7456Config_t *max7456Config, const vcdP
     spiSetClkDivisor(dev, max7456SpiClockDiv);
 
     // force soft reset on Max7456
-    pifSpiDevice_WriteRegByte(max7456._p_spi, MAX7456_REG_W_VM0, MAX7456_SOFTWARE_RESET_BIT(1));
+    pifDeviceReg_WriteRegByte(max7456._p_device, MAX7456_REG_W_VM0, MAX7456_SOFTWARE_RESET_BIT(1));
 
     // Wait for 200us before polling for completion of reset
     delayMicroseconds(200);
 
     // Wait for reset to complete
-    while (!pifSpiDevice_ReadRegBit8(max7456._p_spi, MAX7456_REG_R_VM0, MAX7456_SOFTWARE_RESET_BIT_MASK, &data) || data != 0x00);
+    while (!pifDeviceReg_ReadRegBit8(max7456._p_device, MAX7456_REG_R_VM0, MAX7456_SOFTWARE_RESET_BIT_MASK, &data) || data != 0x00);
 
     // Setup values to write to registers
     videoSignalCfg = pVcdProfile->video_system;
@@ -426,7 +455,7 @@ bool max7456LayerCopy(displayPortLayer_e destLayer, displayPortLayer_e sourceLay
 
 bool max7456DmaInProgress(void)
 {
-    return pifSpiDevice_IsBusy(max7456._p_spi);
+    return max7456SpiBusy();
 }
 
 bool max7456BuffersSynced(void)
@@ -455,11 +484,11 @@ bool max7456ReInitIfRequired(bool forceStallCheck)
 
         // Write 0xff to conclude any current SPI transaction the MAX7456 is expecting
         data = END_STRING;
-        pifSpiDevice_Transfer(max7456._p_spi, &data, NULL, sizeof(data));
+        pifSpiDevice_Transfer(max7456SpiDevice(), &data, NULL, sizeof(data));
 
         // A read that fails is not taken as a stall. It is tried again at the
         // next check.
-        stalled = pifSpiDevice_ReadRegByte(max7456._p_spi, MAX7456_REG_R_VM0, &data) && (data != videoSignalReg);
+        stalled = pifDeviceReg_ReadRegByte(max7456._p_device, MAX7456_REG_R_VM0, &data) && (data != videoSignalReg);
     }
 
     if (stalled) {
@@ -470,11 +499,11 @@ bool max7456ReInitIfRequired(bool forceStallCheck)
 
         // Write 0xff to conclude any current SPI transaction the MAX7456 is expecting
         data = END_STRING;
-        pifSpiDevice_Transfer(max7456._p_spi, &data, NULL, sizeof(data));
+        pifSpiDevice_Transfer(max7456SpiDevice(), &data, NULL, sizeof(data));
 
         // Adjust output format based on the current input format.
 
-        if (!pifSpiDevice_ReadRegByte(max7456._p_spi, MAX7456_REG_R_STAT, &videoSense)) {
+        if (!pifDeviceReg_ReadRegByte(max7456._p_device, MAX7456_REG_R_STAT, &videoSense)) {
             return stalled;
         }
 
@@ -523,7 +552,7 @@ bool max7456DrawScreen(void)
         maxEncodeTime = spiUseMOSI_DMA(dev) ? MAX_ENCODE_US : MAX_ENCODE_US_POLLED;
 
         // Abort for now if the bus is still busy
-        if (pifSpiDevice_IsBusy(max7456._p_spi)) {
+        if (max7456SpiBusy()) {
             // Not finished yet
             return true;
         }
@@ -592,7 +621,7 @@ bool max7456DrawScreen(void)
         }
 
         if (spiBufIndex) {
-            if (!pifSpiDevice_StartTransfer(max7456._p_spi, spiBuf, NULL, spiBufIndex)) {
+            if (!pifSpiDevice_StartTransfer(max7456SpiDevice(), spiBuf, NULL, spiBufIndex)) {
                 // The characters marked as sent above were not, so send
                 // the whole screen again.
                 max7456ClearShadowBuffer();

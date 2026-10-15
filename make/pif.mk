@@ -11,8 +11,9 @@
 #
 #     PIF_DIR := /path/to/pif
 #
-# Only the sources needed so far are built: the core, pif_i2c, pif_imu_sensor
-# and pif_qmc5883 for the QMC5883L compass driver, pif_spi and pif_dps310*
+# Only the sources needed so far are built: the core, pif_device_reg with
+# pif_i2c and pif_spi under it, pif_imu_sensor
+# and pif_qmc5883 for the QMC5883L compass driver, pif_dps310*
 # for the DPS310 barometer driver, pif_max7456 for the MAX7456 OSD driver,
 # pif_rc and pif_rc_ppm for the PPM receiver input, pif_ring_buffer and
 # pif_uart for the hardware UART driver, pif_rc_ibus with them for the iBUS
@@ -61,6 +62,7 @@ PIF_SRC = \
             pif_task_manager.c \
             pif_timer.c \
             pif_timer_manager.c \
+            pif_device_reg.c \
             pif_i2c.c \
             pif_transport.c \
             pif_uart.c \

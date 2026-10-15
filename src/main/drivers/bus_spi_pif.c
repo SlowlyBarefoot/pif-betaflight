@@ -47,13 +47,23 @@ typedef struct spiPifAsync_s {
     busSegment_t segments[2];
 } spiPifAsync_t;
 
+// The callback a client attached with spiPifAttachTransferDone().
+typedef struct spiPifDone_s {
+    PifSpiDevice *device;
+    spiPifTransferDoneFn fn;
+    void *arg;
+} spiPifDone_t;
+
 static PifSpiPort spiPifPorts[SPIDEV_COUNT];
 static bool spiPifPortReady[SPIDEV_COUNT];
 static spiPifAsync_t spiPifAsync[SPIDEV_COUNT][SPI_PIF_DEVICE_COUNT];
+static spiPifDone_t spiPifDone[SPIDEV_COUNT][SPI_PIF_DEVICE_COUNT];
+// Slot of the transfer that holds the port, the only one that may end it.
+static spiPifAsync_t * volatile spiPifActiveSlot[SPIDEV_COUNT];
 
 static const extDevice_t *spiPifExtDevice(const PifSpiDevice *pDevice)
 {
-    return (const extDevice_t *)pDevice->_p_client;
+    return (const extDevice_t *)pDevice->parent._p_client;
 }
 
 // A free bus has finished every transfer queued on it, so none of the
@@ -79,11 +89,31 @@ static void spiPifReleaseIfIdle(const PifSpiDevice *pDevice, const extDevice_t *
 // Segment callback of a transfer that does not wait, called by the SPI driver
 // when it is over, from the DMA interrupt when it used DMA. The slot is not
 // released here: the driver still reads its terminating segment after this.
+// pifSpiPort_sigEndTransfer() does not say which transfer it ends, so a
+// transfer PIF has already given up on past the device timeout must not end
+// the one that holds the port now.
 static busStatus_e spiPifTransferDone(uint32_t arg)
 {
     spiPifAsync_t *pSlot = (spiPifAsync_t *)arg;
+    PifSpiDevice *pDevice = pSlot->device;
+    const unsigned port = pDevice->_p_port - spiPifPorts;
 
-    pifSpiDevice_sigTransferDone(pSlot->device);
+    if (spiPifActiveSlot[port] != pSlot) {
+        return BUS_READY;
+    }
+    spiPifActiveSlot[port] = NULL;
+
+    pifSpiPort_sigEndTransfer(pDevice->_p_port, TRUE);
+
+    for (int i = 0; i < SPI_PIF_DEVICE_COUNT; i++) {
+        const spiPifDone_t *pDone = &spiPifDone[port][i];
+        if (pDone->device == pDevice) {
+            if (pDone->fn) {
+                pDone->fn(pDone->arg);
+            }
+            break;
+        }
+    }
 
     return BUS_READY;
 }
@@ -108,7 +138,7 @@ static void spiPifActTransfer(PifSpiDevice *pDevice, uint8_t *pWrite, uint8_t *p
 // screen by DMA. It is queued behind a transfer still on the bus, as
 // spiSequence() does, and act_is_busy reports it until the bus is free. It
 // fails while the previous transfer of the same device may still be queued.
-// When it is over, pifSpiDevice_sigTransferDone() is called for the device
+// When it is over, pifSpiPort_sigEndTransfer() is called for the port
 // through a segment callback, which takes over the callbackArg of the device's
 // extDevice_t, so that device must not also run Betaflight segments with a
 // callback of their own. It may be called from an interrupt.
@@ -154,6 +184,7 @@ static BOOL spiPifActStartTransfer(PifSpiDevice *pDevice, uint8_t *pWrite, uint8
     pSlot->segments[1] = (busSegment_t){.u.link = {NULL, NULL}, 0, true, NULL};
 
     ((extDevice_t *)dev)->callbackArg = (uint32_t)pSlot;
+    spiPifActiveSlot[pDevice->_p_port - spiPifPorts] = pSlot;
 
     spiSequence(dev, &pSlot->segments[0]);
 
@@ -209,6 +240,38 @@ static BOOL spiPifActIsBusy(PifSpiDevice *pDevice)
     spiPifReleaseIfIdle(pDevice, dev);
 
     return spiIsBusy(dev) ? TRUE : FALSE;
+}
+
+bool spiPifAttachTransferDone(PifSpiDevice *pDevice, spiPifTransferDoneFn fn, void *arg)
+{
+    if (!pDevice) {
+        return false;
+    }
+
+    spiPifDone_t *pDones = spiPifDone[pDevice->_p_port - spiPifPorts];
+    spiPifDone_t *pDone = NULL;
+
+    for (int i = 0; i < SPI_PIF_DEVICE_COUNT; i++) {
+        if (pDones[i].device == pDevice) {
+            pDone = &pDones[i];
+            break;
+        }
+        if (!pDone && !pDones[i].device) {
+            pDone = &pDones[i];
+        }
+    }
+
+    if (!pDone) {
+        return false;
+    }
+
+    ATOMIC_BLOCK(NVIC_PRIO_MAX) {
+        pDone->device = fn ? pDevice : NULL;
+        pDone->fn = fn;
+        pDone->arg = arg;
+    }
+
+    return true;
 }
 
 PifSpiPort *spiPifPort(SPIDevice device)

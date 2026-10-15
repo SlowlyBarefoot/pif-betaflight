@@ -395,7 +395,11 @@ static bool gpsInitDriver(uint32_t baudRate)
         gpsUart.act_send_data = gpsUartSendData;
 
         // Last, since this is what starts the PifUart TX task.
-        pifGpsUblox_AttachUart(&gpsDriver.ublox, &gpsUart);
+        if (!pifGpsUblox_AttachTransport(&gpsDriver.ublox, &gpsUart.parent)) {
+            pifUart_Clear(&gpsUart);
+            pifGpsUblox_Clear(&gpsDriver.ublox);
+            return false;
+        }
         return true;
 #endif
 

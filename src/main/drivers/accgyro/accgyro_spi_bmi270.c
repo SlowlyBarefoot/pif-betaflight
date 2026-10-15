@@ -60,8 +60,11 @@
 // follow Betaflight's gyro modes; they go through the PifSpiDevice of the chip.
 // The EXTI triggered DMA read is started from the ISR with
 // pifSpiDevice_StartTransfer(), and its completion is reported through the
-// event attached with pifSpiDevice_AttachEvtTransferDone().
+// callback attached with spiPifAttachTransferDone(), which gives the port back
+// with pifDeviceReg_CheckTransfer().
 static PifBmi270 bmi270;
+
+#define bmi270SpiDevice() ((PifSpiDevice *)bmi270._p_device)
 
 // BMI270 register reads are 16bits with the first byte a "dummy" value 0
 // that must be ignored. The result is in the second byte.
@@ -69,7 +72,7 @@ static uint8_t bmi270RegisterRead(PifBmi270Reg registerId)
 {
     uint8_t data[2] = { 0, 0 };
 
-    if (bmi270._p_spi && (bmi270._fn.read_bytes)(bmi270._fn.p_device, registerId, data, 2)) {
+    if (bmi270._p_device && pifDeviceReg_ReadRegBytes(bmi270._p_device, registerId, data, 2)) {
         return data[1];
     } else {
         return 0;
@@ -78,7 +81,7 @@ static uint8_t bmi270RegisterRead(PifBmi270Reg registerId)
 
 static void bmi270RegisterWrite(PifBmi270Reg registerId, uint8_t value, unsigned delayMs)
 {
-    (bmi270._fn.write_byte)(bmi270._fn.p_device, registerId, value);
+    pifDeviceReg_WriteRegByte(bmi270._p_device, registerId, value);
     if (delayMs) {
         delay(delayMs);
     }
@@ -215,9 +218,13 @@ extiCallbackRec_t bmi270IntCallbackRec;
 #ifdef USE_GYRO_EXTI
 // Called in ISR context
 // Gyro read has just completed
-static void bmi270TransferDone(PifIssuerP p_issuer)
+static void bmi270TransferDone(void *arg)
 {
-    gyroDev_t *gyro = (gyroDev_t *)p_issuer;
+    gyroDev_t *gyro = (gyroDev_t *)arg;
+
+    // Gives the port back for the next read
+    pifDeviceReg_CheckTransfer(bmi270._p_device);
+
     int32_t gyroDmaDuration = cmpTimeCycles(getCycleCounter(), gyro->gyroLastEXTI);
 
     if (gyroDmaDuration > gyro->gyroDmaMaxDuration) {
@@ -238,7 +245,7 @@ void bmi270ExtiHandler(extiCallbackRec_t *cb)
 
     if (gyro->gyroModeSPI == GYRO_EXTI_INT_DMA) {
         // Accelerometer and gyro in one burst, after the dummy byte
-        pifSpiDevice_StartTransfer(bmi270._p_spi, gyro->dev.txBuf, gyro->dev.rxBuf, 14);
+        pifSpiDevice_StartTransfer(bmi270SpiDevice(), gyro->dev.txBuf, gyro->dev.rxBuf, 14);
     }
 
     gyro->detectedEXTI++;
@@ -275,7 +282,7 @@ static bool bmi270AccRead(accDev_t *acc)
         acc->gyro->dev.txBuf[0] = BMI270_REG_ACC_X_LSB | 0x80;
 
         // Waits for completion
-        pifSpiDevice_Transfer(bmi270._p_spi, acc->gyro->dev.txBuf, acc->gyro->dev.rxBuf, 8);
+        pifSpiDevice_Transfer(bmi270SpiDevice(), acc->gyro->dev.txBuf, acc->gyro->dev.rxBuf, 8);
 
         // Fall through
         FALLTHROUGH;
@@ -319,8 +326,11 @@ static bool bmi270GyroReadRegister(gyroDev_t *gyro)
         if (gyro->detectedEXTI > GYRO_EXTI_DETECT_THRESHOLD) {
             if (spiUseDMA(&gyro->dev)) {
                 gyro->dev.txBuf[0] = BMI270_REG_ACC_X_LSB | 0x80;
-                pifSpiDevice_AttachEvtTransferDone(bmi270._p_spi, bmi270TransferDone, gyro);
-                gyro->gyroModeSPI = GYRO_EXTI_INT_DMA;
+                if (spiPifAttachTransferDone(bmi270SpiDevice(), bmi270TransferDone, gyro)) {
+                    gyro->gyroModeSPI = GYRO_EXTI_INT_DMA;
+                } else {
+                    gyro->gyroModeSPI = GYRO_EXTI_INT;
+                }
             } else {
                 // Interrupts are present, but no DMA
                 gyro->gyroModeSPI = GYRO_EXTI_INT;
@@ -339,7 +349,7 @@ static bool bmi270GyroReadRegister(gyroDev_t *gyro)
         gyro->dev.txBuf[0] = BMI270_REG_GYR_X_LSB | 0x80;
 
         // Waits for completion
-        pifSpiDevice_Transfer(bmi270._p_spi, gyro->dev.txBuf, gyro->dev.rxBuf, 8);
+        pifSpiDevice_Transfer(bmi270SpiDevice(), gyro->dev.txBuf, gyro->dev.rxBuf, 8);
 
         gyro->gyroADCRaw[X] = gyroData[1];
         gyro->gyroADCRaw[Y] = gyroData[2];
@@ -389,7 +399,7 @@ static bool bmi270GyroReadFifo(gyroDev_t *gyro)
     // Burst read the FIFO length followed by the next 6 bytes containing the gyro axis data for
     // the first sample in the queue. It's possible for the FIFO to be empty so we need to check the
     // length before using the sample.
-    pifSpiDevice_Transfer(bmi270._p_spi, (uint8_t *)bmi270_tx_buf, bmi270_rx_buf, BUFFER_SIZE);   // receive response
+    pifSpiDevice_Transfer(bmi270SpiDevice(), (uint8_t *)bmi270_tx_buf, bmi270_rx_buf, BUFFER_SIZE);   // receive response
 
     int fifoLength = (uint16_t)((bmi270_rx_buf[IDX_FIFO_LENGTH_H] << 8) | bmi270_rx_buf[IDX_FIFO_LENGTH_L]);
 

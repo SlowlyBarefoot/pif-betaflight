@@ -308,12 +308,12 @@ static bool ms5611I2cDetect(baroDev_t *baro)
     // Something has to answer the PROM read before the reset command goes out,
     // as the native driver checked, so another chip at the address is left alone.
     PifI2cDevice *probe = pifI2cPort_TemporaryDevice(port, dev->busType_u.i2c.address, NULL);
-    if (!pifI2cDevice_ReadRegBytes(probe, MS5611_REG_READ_PROM, &sig, 1) || sig == 0xFF) {
+    if (!probe || !pifDeviceReg_ReadRegBytes(&probe->parent, MS5611_REG_READ_PROM, &sig, 1) || sig == 0xFF) {
         goto fail;
     }
 
     // Resets the chip and checks the PROM CRC, which fails on a BMP085 w/o XCLR line.
-    if (ms5611._p_i2c) {
+    if (ms5611._p_device) {
         pifMs5611_Clear(&ms5611);
     }
     if (!pifMs5611_Init(&ms5611, PIF_ID_AUTO, port, dev->busType_u.i2c.address, NULL)) {

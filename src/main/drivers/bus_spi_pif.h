@@ -26,16 +26,19 @@
  * with the Betaflight drivers on it. A SPI bus carries several chips told
  * apart by their chip select, so each PifSpiDevice on the port is handed the
  * extDevice_t of its chip as p_client, and every transfer goes through that
- * extDevice_t. Register reads and writes block until the transfer is over,
- * like spiReadRegMskBufRB() and spiWriteReg(), and fail rather than wait when
- * a DMA transfer still holds the bus. A plain pifSpiDevice_Transfer() waits
- * for the bus instead, like spiReadWriteBuf(), so it always goes through.
+ * extDevice_t. Clients reach a device through &device->parent with the
+ * pifDeviceReg_ functions. Register reads and writes block until the transfer
+ * is over, like spiReadRegMskBufRB() and spiWriteReg(), and fail rather than
+ * wait when a DMA transfer still holds the bus. A plain pifSpiDevice_Transfer()
+ * waits for the bus instead, like spiReadWriteBuf(), so it always goes through.
  * pifSpiDevice_StartTransfer() queues the transfer with spiSequence() and
- * returns at once; pifSpiDevice_IsBusy() reports it until the bus is free.
- * When it is over, the event attached with pifSpiDevice_AttachEvtTransferDone()
- * is called from the SPI DMA interrupt (or from spiSequence() itself when the
- * bus does not use DMA). pifSpiDevice_StartTransfer() may be called from an
- * interrupt. It takes over the callbackArg of the device's extDevice_t.
+ * returns at once. When it is over, pifSpiPort_sigEndTransfer() is called from
+ * the SPI DMA interrupt (or from spiSequence() itself when the bus does not use
+ * DMA), followed by the callback attached with spiPifAttachTransferDone(). PIF
+ * keeps the port held until pifDeviceReg_CheckTransfer() reports the transfer
+ * over, so the client asks it, from that callback or from its own task, before
+ * the next transfer on the port. pifSpiDevice_StartTransfer() may be called
+ * from an interrupt. It takes over the callbackArg of the device's extDevice_t.
  */
 
 #pragma once
@@ -51,3 +54,13 @@
 // if the bus is invalid or the port could not be allocated. The bus itself
 // must already have been brought up with spiInit().
 PifSpiPort *spiPifPort(SPIDevice device);
+
+typedef void (*spiPifTransferDoneFn)(void *arg);
+
+// Attaches the callback that is called, with arg, when a transfer begun with
+// pifSpiDevice_StartTransfer() on the device is over. It is called from the
+// SPI DMA interrupt, after pifSpiPort_sigEndTransfer(), so it has to be short;
+// it may call pifDeviceReg_CheckTransfer() to give the port back at once. A
+// NULL callback detaches it. Returns false when every slot of the port is
+// taken by another device.
+bool spiPifAttachTransferDone(PifSpiDevice *pDevice, spiPifTransferDoneFn fn, void *arg);

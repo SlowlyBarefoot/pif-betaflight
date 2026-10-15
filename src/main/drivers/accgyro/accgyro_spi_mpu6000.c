@@ -72,7 +72,8 @@
 // since they follow Betaflight's gyro modes; they go through the PifSpiDevice
 // of the chip. The EXTI triggered DMA read is started from the ISR with
 // pifSpiDevice_StartTransfer(), and its completion is reported through the
-// event attached with pifSpiDevice_AttachEvtTransferDone().
+// callback attached with spiPifAttachTransferDone(), which gives the port back
+// with pifDeviceReg_CheckTransfer().
 //
 // A board may carry two of them (gyro_to_use = BOTH), so there is one
 // PifMpu60x0 per gyro, found by the extDevice_t it was handed as p_client.
@@ -82,7 +83,7 @@ static PifMpu60x0 mpu6000[2];
 static PifMpu60x0 *mpu6000Find(const extDevice_t *dev)
 {
     for (unsigned i = 0; i < ARRAYLEN(mpu6000); i++) {
-        if (mpu6000[i]._p_spi && mpu6000[i]._p_spi->_p_client == dev) {
+        if (mpu6000[i]._p_device && mpu6000[i]._p_device->_p_client == dev) {
             return &mpu6000[i];
         }
     }
@@ -97,11 +98,16 @@ static PifMpu60x0 *mpu6000FindFree(const extDevice_t *dev)
         return mpu;
     }
     for (unsigned i = 0; i < ARRAYLEN(mpu6000); i++) {
-        if (!mpu6000[i]._p_spi) {
+        if (!mpu6000[i]._p_device) {
             return &mpu6000[i];
         }
     }
     return NULL;
+}
+
+static PifSpiDevice *mpu6000SpiDevice(PifMpu60x0 *mpu)
+{
+    return (PifSpiDevice *)mpu->_p_device;
 }
 
 static PifSpiPort *mpu6000PifPort(const extDevice_t *dev)
@@ -111,7 +117,7 @@ static PifSpiPort *mpu6000PifPort(const extDevice_t *dev)
 
 static void mpu6000RegisterWrite(PifMpu60x0 *mpu, PifMpu60x0Reg registerId, uint8_t value)
 {
-    (mpu->_fn.write_byte)(mpu->_fn.p_device, registerId, value);
+    pifDeviceReg_WriteRegByte(mpu->_p_device, registerId, value);
     delayMicroseconds(15);
 }
 
@@ -121,9 +127,16 @@ static void mpu6000RegisterWrite(PifMpu60x0 *mpu, PifMpu60x0Reg registerId, uint
 #ifdef USE_GYRO_EXTI
 // Called in ISR context
 // Gyro read has just completed
-static void mpu6000TransferDone(PifIssuerP p_issuer)
+static void mpu6000TransferDone(void *arg)
 {
-    gyroDev_t *gyro = (gyroDev_t *)p_issuer;
+    gyroDev_t *gyro = (gyroDev_t *)arg;
+    PifMpu60x0 *mpu = mpu6000Find(&gyro->dev);
+
+    // Gives the port back for the next read
+    if (mpu) {
+        pifDeviceReg_CheckTransfer(mpu->_p_device);
+    }
+
     int32_t gyroDmaDuration = cmpTimeCycles(getCycleCounter(), gyro->gyroLastEXTI);
 
     if (gyroDmaDuration > gyro->gyroDmaMaxDuration) {
@@ -150,7 +163,7 @@ static void mpu6000ExtiHandler(extiCallbackRec_t *cb)
     if (gyro->gyroModeSPI == GYRO_EXTI_INT_DMA) {
         PifMpu60x0 *mpu = mpu6000Find(&gyro->dev);
         if (mpu) {
-            pifSpiDevice_StartTransfer(mpu->_p_spi, gyro->dev.txBuf, &gyro->dev.rxBuf[1], MPU6000_BURST_SIZE);
+            pifSpiDevice_StartTransfer(mpu6000SpiDevice(mpu), gyro->dev.txBuf, &gyro->dev.rxBuf[1], MPU6000_BURST_SIZE);
         }
     }
 
@@ -193,7 +206,7 @@ static bool mpu6000AccRead(accDev_t *acc)
         acc->gyro->dev.txBuf[0] = MPU60X0_REG_ACCEL_XOUT_H | 0x80;
 
         // Waits for completion
-        pifSpiDevice_Transfer(mpu->_p_spi, acc->gyro->dev.txBuf, &acc->gyro->dev.rxBuf[1], 7);
+        pifSpiDevice_Transfer(mpu6000SpiDevice(mpu), acc->gyro->dev.txBuf, &acc->gyro->dev.rxBuf[1], 7);
 
         // Fall through
         FALLTHROUGH;
@@ -237,8 +250,11 @@ static bool mpu6000GyroRead(gyroDev_t *gyro)
         if (mpu && gyro->detectedEXTI > GYRO_EXTI_DETECT_THRESHOLD) {
             if (spiUseDMA(&gyro->dev)) {
                 gyro->dev.txBuf[0] = MPU60X0_REG_ACCEL_XOUT_H | 0x80;
-                pifSpiDevice_AttachEvtTransferDone(mpu->_p_spi, mpu6000TransferDone, gyro);
-                gyro->gyroModeSPI = GYRO_EXTI_INT_DMA;
+                if (spiPifAttachTransferDone(mpu6000SpiDevice(mpu), mpu6000TransferDone, gyro)) {
+                    gyro->gyroModeSPI = GYRO_EXTI_INT_DMA;
+                } else {
+                    gyro->gyroModeSPI = GYRO_EXTI_INT;
+                }
             } else {
                 // Interrupts are present, but no DMA
                 gyro->gyroModeSPI = GYRO_EXTI_INT;
@@ -262,7 +278,7 @@ static bool mpu6000GyroRead(gyroDev_t *gyro)
         gyro->dev.txBuf[0] = MPU60X0_REG_GYRO_XOUT_H | 0x80;
 
         // Waits for completion
-        pifSpiDevice_Transfer(mpu->_p_spi, gyro->dev.txBuf, &gyro->dev.rxBuf[1], 7);
+        pifSpiDevice_Transfer(mpu6000SpiDevice(mpu), gyro->dev.txBuf, &gyro->dev.rxBuf[1], 7);
 
         gyro->gyroADCRaw[X] = __builtin_bswap16(gyroData[1]);
         gyro->gyroADCRaw[Y] = __builtin_bswap16(gyroData[2]);
@@ -335,7 +351,7 @@ static void mpu6000SpiGyroInit(gyroDev_t *gyro)
     mpu6000AccAndGyroInit(mpu, gyro);
 
     // Accel and Gyro DLPF Setting
-    (mpu->_fn.write_byte)(mpu->_fn.p_device, MPU60X0_REG_CONFIG, mpuGyroDLPF(gyro));
+    pifDeviceReg_WriteRegByte(mpu->_p_device, MPU60X0_REG_CONFIG, mpuGyroDLPF(gyro));
     delayMicroseconds(1);
 
     spiSetClkDivisor(&gyro->dev, spiCalculateDivider(MPU6000_MAX_SPI_CLK_HZ));

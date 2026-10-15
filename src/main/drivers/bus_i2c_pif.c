@@ -61,7 +61,7 @@ static bool i2cPifRegister(uint32_t iaddr, uint8_t isize, uint8_t *pReg)
 
 // Reads only start the transfer and answer IR_WAIT; i2cPifActCheck() then
 // reports the end of it. PIF's blocking reads poll that in their wait loop,
-// and pifI2cDevice_StartRead() lets a driver poll it from its own task instead,
+// and pifDeviceReg_StartRead() lets a driver poll it from its own task instead,
 // so pData must stay valid until the transfer is over either way.
 static PifI2cReturn i2cPifActRead(PifI2cDevice *pDevice, uint32_t iaddr, uint8_t isize, uint8_t *pData, size_t size)
 {
@@ -88,7 +88,7 @@ static PifI2cReturn i2cPifActCheck(PifI2cDevice *pDevice)
 }
 
 // Writes run like reads: pData is the caller's buffer, which a blocking
-// pifI2cDevice_Write() keeps valid until the transfer is over. A write with no
+// pifDeviceReg_Write() keeps valid until the transfer is over. A write with no
 // register address has to carry at least one byte, since the drivers do not
 // send an address alone.
 static PifI2cReturn i2cPifActWrite(PifI2cDevice *pDevice, uint32_t iaddr, uint8_t isize, uint8_t *pData, size_t size)
@@ -102,7 +102,7 @@ static PifI2cReturn i2cPifActWrite(PifI2cDevice *pDevice, uint32_t iaddr, uint8_
     return i2cWriteBuffer(i2cPifPortDevice(pDevice), pDevice->addr, reg, size, pData) ? IR_WAIT : IR_ERROR;
 }
 
-// Called by PIF when a transfer outlives pDevice->timeout, which is 10 ms by
+// Called by PIF when a transfer outlives pDevice->parent.timeout, which is 10 ms by
 // default like I2C_TIMEOUT_US. The transfer is still holding the peripheral,
 // so reset it as i2cWait() would have.
 static void i2cPifActRecover(PifI2cDevice *pDevice)
