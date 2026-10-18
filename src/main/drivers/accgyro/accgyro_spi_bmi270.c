@@ -54,8 +54,8 @@
 #define GYRO_EXTI_DETECT_THRESHOLD 1000
 
 // The chip is driven by PIF's pif_bmi270. pifBmi270Spi_Init() adds it to the
-// PifSpiPort of its bus, soft resets it and registers it on g_imu_sensor, and
-// pifBmi270_UploadConfig() uploads the config file (microcode). The register
+// PifSpiPort of its bus, soft resets it, uploads the config file (microcode),
+// checks that the chip took it and registers it on g_imu_sensor. The register
 // set up after that and the gyro and accelerometer reads stay here, since they
 // follow Betaflight's gyro modes; they go through the PifSpiDevice of the chip.
 // The EXTI triggered DMA read is started from the ISR with
@@ -141,23 +141,19 @@ static uint8_t getBmiOsrMode()
 
 static void bmi270Config(gyroDev_t *gyro)
 {
-    extDevice_t *dev = &gyro->dev;
-
     // If running in hardware_lpf experimental mode then switch to FIFO-based,
     // 6.4KHz sampling, unfiltered data vs. the default 3.2KHz with hardware filtering
 #ifdef USE_GYRO_DLPF_EXPERIMENTAL
     const bool fifoMode = (gyro->hardware_lpf == GYRO_HARDWARE_LPF_EXPERIMENTAL);
 #else
+    UNUSED(gyro);
     const bool fifoMode = false;
 #endif
 
-    // The soft reset and its 100ms delay were done by pifBmi270Spi_Init() in
-    // bmi270SpiGyroDetect()
-
-    // Toggle the chip into SPI mode
-    bmi270EnableSPI(dev);
-
-    pifBmi270_UploadConfig(&bmi270);
+    // The soft reset, the switch back to SPI, the config file upload and its
+    // INIT_OK check were done by pifBmi270Spi_Init() in bmi270SpiGyroDetect().
+    // Loading the file a second time without a reset is not part of the
+    // datasheet's init sequence, so only the registers are set here.
 
     // Configure the FIFO
     if (fifoMode) {
