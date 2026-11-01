@@ -83,7 +83,7 @@ bool qmc5883lDetect(magDev_t *magDev)
     extDevice_t *dev = &magDev->dev;
 
     // pifQmc5883_Detect() waits 20 ms on pif's 1 ms clock after the soft
-    // reset, which only advances once pifLinker_Init() has succeeded.
+    // reset, which only advances once pif_Init() has succeeded.
     if (dev->bus->busType != BUS_TYPE_I2C || !pifLinker_IsReady()) {
         return false;
     }

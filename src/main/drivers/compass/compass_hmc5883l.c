@@ -319,7 +319,7 @@ static bool hmc5883lI2cDetect(magDev_t *mag)
     extDevice_t *dev = &mag->dev;
 
     // pifHmc5883_Init() waits on pif's 1 ms clock, which only advances once
-    // pifLinker_Init() has succeeded.
+    // pif_Init() has succeeded.
     if (!pifLinker_IsReady()) {
         return false;
     }

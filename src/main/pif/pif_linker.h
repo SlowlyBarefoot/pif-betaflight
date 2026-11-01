@@ -24,6 +24,7 @@
 
 #include "core/pif.h"
 #include "core/pif_task_manager.h"
+#include "core/pif_timer_manager.h"
 #include "sensor/pif_imu_sensor.h"
 
 // Number of PifTask slots the task manager is created with. Every Betaflight
@@ -45,8 +46,8 @@
 // script reserves no heap (_Min_Heap_Size = 0 in src/link/stm32_flash_f4_split.ld),
 // so pif_linker.c supplies _sbrk() over a static buffer of this size instead
 // of growing the heap into the stack. Allocation happens only during
-// pifLinker_Init(), so running out shows up as pifLinker_Init() returning
-// false rather than as a late failure.
+// pif_Init(), so running out shows up as pif_Init() returning FALSE rather
+// than as a late failure.
 //
 // What has to fit, with pifObjArray adding 8 bytes of node to every element:
 //
@@ -55,7 +56,7 @@
 //   PIF_TIMER_1MS_SIZE  x (8 + sizeof(PifTimer)) + 4 bytes per removal slot
 //   I2C_PIF_DEVICE_COUNT x (8 + sizeof(PifI2cDevice)) per I2C bus a PIF
 //                       driver uses (drivers/bus_i2c_pif.c, allocated on
-//                       first use rather than in pifLinker_Init())
+//                       first use rather than in pif_Init())
 //   SPI_PIF_DEVICE_COUNT x (8 + sizeof(PifSpiDevice)) per SPI bus a PIF
 //                       driver uses (drivers/bus_spi_pif.c, likewise)
 //   12 x sizeof(uint16_t) for the PPM channel buffer when the receiver is
@@ -84,46 +85,45 @@
 //                       driven from existing tasks, so they take no heap, no
 //                       task and no timer.
 //
-// sizeof(PifTask) is 144 bytes with PIF_USE_TASK_STATISTICS and
-// PIF_USE_BLOCK_TIME on, which pif_conf.h does turn on, so the tasks alone take
-// 40 x 152 = 6080 bytes. The timer and PifTimer slots bring the total to around
-// 6.7 KB, and the 512 bytes on top of 8 KB are for the UART ring buffers, which
-// leaves about 1.5 KB spare for the rest. Anything added to PifTask costs 152
-// bytes here per 40 slots, so check this figure when PIF grows a field.
-#define PIF_HEAP_SIZE			(8192 + 512)
+// sizeof(PifTask) is 156 bytes with PIF_USE_TASK_STATISTICS, PIF_USE_BLOCK_TIME
+// and PIF_USE_TASK_REALTIME on, which pif_conf.h does turn on, so the tasks
+// alone take 40 x 164 = 6560 bytes. The task timer slots (4 x (8 + 36)) and
+// the PifTimer slots (8 x (8 + 24) + 8 x 4) bring the total to about 7 KB,
+// and the 1 KB on top of 8 KB is for the UART ring buffers, which leaves about
+// 1 KB spare for the I2C/SPI devices and the rest. Anything added to PifTask
+// costs 40 bytes here per 4 bytes of field, so check this figure when PIF
+// grows a field.
+#define PIF_HEAP_SIZE			(8192 + 1024)
 
 // The one PifImuSensor of the board. A PIF gyro, accelerometer or magnetometer
 // driver registers its read function and gain on it when it is initialised,
 // and all three share it, so every PIF sensor driver has to be handed this
-// instance rather than one of its own. pifLinker_Init() clears it; the PIF
+// instance rather than one of its own. pifLinker_Setup() clears it; the PIF
 // alignment is left unset because Betaflight aligns the samples itself.
 extern PifImuSensor g_imu_sensor;
 
-// Initialises pif, the task manager and the 1 ms timer manager, in that order.
-// Must run after systemInit(), because pif is handed micros() as its 1 us
-// clock, and before the first pifLinker_sigTimer1ms().
-//
-// Returns 0 (E_SUCCESS) when all three came up, otherwise the PifError of the
-// step that failed. 3 is E_OUT_OF_HEAP, which means PIF_HEAP_SIZE is too small
-// for the slot counts above. The tick and the loop below stay dormant unless
-// this returned 0.
-uint8_t pifLinker_Init(void);
+// The 1 ms timer manager. Nothing registers a PifTimer on it yet; it exists so
+// that the tick path is in place and can be measured.
+extern PifTimerManager g_timer1ms;
 
-// Whether pifLinker_Init() has succeeded, so PIF may be called. Callers that
+// PIF's 1 us clock, micros() narrowed to 32 bits. Handed to pif_Init(), so it
+// has to be running by then: systemInit() sets usTicks and starts SysTick.
+uint32_t pifActTimer1us(void);
+
+// The port setup handed to pif_Init(). Clears g_imu_sensor, then creates the
+// task manager and the 1 ms timer manager, in that order: the timer manager
+// takes one of the task manager's timer slots. Runs at PST_TIMER, so it may
+// wait with pif_Delay1ms(). On FALSE, pif_error holds the cause, E_OUT_OF_HEAP
+// meaning PIF_HEAP_SIZE is too small for the slot counts above, and pif_Init()
+// undoes the task manager through pif_Exit().
+BOOL pifLinker_Setup(void);
+
+// Whether pif_Init() has succeeded, so PIF may be called. pif_state starts at
+// PST_NONE and only pif_Init() raises it to PST_RUNNING, after every setup has
+// succeeded; a failed setup drops it back through pif_Exit(). Callers that
 // only ever run after a successful init do not need it; scheduler.c does,
 // because schedulerInit() would otherwise register tasks on a task manager
 // that was never created and hand PIF a clock callback it has not got.
 bool pifLinker_IsReady(void);
-
-// 1 ms tick. Called from SysTick_Handler(); advances the pif clock and the
-// 1 ms timer manager. Does nothing until pifLinker_Init() has succeeded.
-void pifLinker_sigTimer1ms(void);
-
-// One pass of the PIF scheduler, called from run() in main.c. Since
-// scheduler.c put every Betaflight task on the task manager, this is the
-// scheduler: it dispatches at most one task, runs the check functions of the
-// event driven tasks when it dispatched none, and closes the CPU load window
-// once a second. Does nothing until pifLinker_Init() has succeeded.
-void pifLinker_Loop(void);
 
 #endif  // PIF_LINKER_H

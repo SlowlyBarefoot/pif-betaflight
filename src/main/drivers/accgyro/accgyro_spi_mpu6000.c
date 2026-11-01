@@ -371,7 +371,7 @@ static void mpu6000SpiAccInit(accDev_t *acc)
 uint8_t mpu6000SpiDetect(const extDevice_t *dev)
 {
     // pif_mpu60x0 waits on pif's 1 ms clock, which only advances once
-    // pifLinker_Init() has succeeded.
+    // pif_Init() has succeeded.
     if (!pifLinker_IsReady()) {
         return MPU_NONE;
     }

@@ -135,7 +135,7 @@ bool mpu6050GyroDetect(gyroDev_t *gyro)
     }
 
     // pif_mpu60x0 waits on pif's 1 ms clock, which only advances once
-    // pifLinker_Init() has succeeded.
+    // pif_Init() has succeeded.
     if (!pifLinker_IsReady()) {
         return false;
     }

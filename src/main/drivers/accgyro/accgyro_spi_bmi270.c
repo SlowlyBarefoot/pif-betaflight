@@ -105,7 +105,7 @@ static void bmi270EnableSPI(const extDevice_t *dev)
 uint8_t bmi270Detect(const extDevice_t *dev)
 {
     // pif_bmi270 waits on pif's 1 ms clock, which only advances once
-    // pifLinker_Init() has succeeded.
+    // pif_Init() has succeeded.
     if (!pifLinker_IsReady()) {
         return MPU_NONE;
     }

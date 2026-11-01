@@ -288,7 +288,7 @@ static bool ms5611I2cDetect(baroDev_t *baro)
     uint8_t sig;
 
     // pifMs5611_Init() waits 100 ms on pif's 1 ms clock after the reset, which
-    // only advances once pifLinker_Init() has succeeded, and the samples only
+    // only advances once pif_Init() has succeeded, and the samples only
     // reach Betaflight through evt_read.
     if (!pifLinker_IsReady() || !baro->evt_read) {
         return false;
@@ -323,7 +323,7 @@ static bool ms5611I2cDetect(baroDev_t *baro)
 
     busDeviceRegister(dev);
 
-    if (!pifMs5611_AttachTaskForReading(&ms5611, PIF_ID_AUTO, MS5611_READ_PERIOD_MS, baro->evt_read, TRUE)) {
+    if (!pifMs5611_AttachTaskForReading(&ms5611, PIF_ID_AUTO, MS5611_READ_PERIOD_MS, baro->evt_read, TRUE, NULL)) {
         pifMs5611_Clear(&ms5611);
         goto fail;
     }

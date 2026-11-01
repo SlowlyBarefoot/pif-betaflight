@@ -171,7 +171,7 @@ bool baroDPS310Detect(baroDev_t *baro)
     bool defaultAddressApplied = false;
 
     // pif_dps310 waits 40 ms on pif's 1 ms clock after the soft reset, which
-    // only advances once pifLinker_Init() has succeeded, and its samples only
+    // only advances once pif_Init() has succeeded, and its samples only
     // reach Betaflight through evt_read.
     if (!pifLinker_IsReady() || !baro->evt_read) {
         return false;
@@ -200,7 +200,7 @@ bool baroDPS310Detect(baroDev_t *baro)
 
     busDeviceRegister(dev);
 
-    if (!pifDps310_AttachTaskForReading(&dps310, PIF_ID_AUTO, DPS310_READ_PERIOD_MS, baro->evt_read, TRUE)) {
+    if (!pifDps310_AttachTaskForReading(&dps310, PIF_ID_AUTO, DPS310_READ_PERIOD_MS, baro->evt_read, TRUE, NULL)) {
         deviceUnconfigure(dev);
         deviceDeInit(dev);
         return false;

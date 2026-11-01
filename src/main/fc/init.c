@@ -265,11 +265,13 @@ void init(void)
 
     // PIF has to come up before anything that could use it, and after
     // systemInit() because it is handed micros() as its 1 us clock. The
-    // returned PifError is dropped on purpose: a failure leaves the 1 ms tick
-    // and the PIF loop dormant, and nothing depends on PIF yet, so the flight
-    // controller carries on either way. Once tasks live on PIF this has to
-    // become a failureMode().
-    pifLinker_Init();
+    // result is dropped on purpose: a failure leaves the 1 ms tick and the PIF
+    // loop dormant, and nothing depends on PIF yet, so the flight controller
+    // carries on either way. Once tasks live on PIF this has to become a
+    // failureMode(). pif_Init() does not clear pif_error itself, so clear it
+    // here: after a failure it then holds the cause of this one.
+    pif_error = E_SUCCESS;
+    pif_Init(pifActTimer1us, pifLinker_Setup, NULL);
 
     // Initialize task data as soon as possible. Has to be done before tasksInit(),
     // and any init code that may try to modify task behaviour before tasksInit().

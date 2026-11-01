@@ -46,7 +46,7 @@ void FAST_CODE run(void)
         // dispatches at most one of them, runs the check functions of the
         // event driven tasks when it dispatched none, and closes the CPU load
         // window once a second.
-        pifLinker_Loop();
+        pifTaskManager_Loop();
 #ifdef SIMULATOR_BUILD
         delayMicroseconds_real(50); // max rate 20kHz
 #endif

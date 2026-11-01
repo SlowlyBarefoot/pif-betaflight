@@ -4919,10 +4919,9 @@ static uint32_t pifTaskAverageOrZero(uint32_t average)
 }
 
 // Prints the columns after the name and returns the average load in 0.1%.
-static int cliPrintTaskStatistics(uint32_t averageDeltaTimeUs, uint32_t maxExecutionTimeUs,
+static int cliPrintTaskStatistics(int taskFrequency, uint32_t maxExecutionTimeUs,
         uint32_t averageExecutionTimeUs, uint32_t totalExecutionTimeUs, uint32_t maxDelayUs)
 {
-    const int taskFrequency = averageDeltaTimeUs == 0 ? 0 : lrintf(1e6f / averageDeltaTimeUs);
     const int maxLoad = (maxExecutionTimeUs * taskFrequency) / 1000;
     const int averageLoad = (averageExecutionTimeUs * taskFrequency) / 1000;
 
@@ -4961,17 +4960,20 @@ static void cliPrintPifTask(PifTask *p_task, void *p_arg)
         cliPrintf("--- - (%15s) ", taskName);
     }
 
+    // The rate is the runs over the last CPU load window, by any release. PIF
+    // averages the delta only over releases by the period, which leaves the
+    // TM_EXTERNAL tasks (FILTER, PID) and the triggered ones without a rate.
     const int averageLoad = cliPrintTaskStatistics(
-            pifTaskAverageOrZero(pifTask_GetAverageDeltaTime(p_task)),
+            (int)p_task->_execution_rate,
             p_task->_max_execution_time,
             pifTaskAverageOrZero(pifTask_GetAverageExecuteTime(p_task)),
             p_task->_total_execution_time,
-            p_task->_max_delay);
+            pifTask_GetMaxDelay(p_task));
     if (p_task->_id != PIF_ID_USER(TASK_SERIAL)) {
         *averageLoadSum += averageLoad;
     }
 
-    pifTask_ResetMaxExecutionTime(p_task);
+    pifTask_ResetMaxStatistics(p_task);
 }
 
 static int cliPrintPifIdle(void)
@@ -4985,8 +4987,9 @@ static int cliPrintPifIdle(void)
 
     // The idle callback has no release to be late for, so it has no delay to report.
     cliPrintf("--- - (%15s) ", "IDLE");
+    const uint32_t averageDeltaTimeUs = pifTaskAverageOrZero(idle.average_delta_time);
     const int averageLoad = cliPrintTaskStatistics(
-            pifTaskAverageOrZero(idle.average_delta_time),
+            averageDeltaTimeUs == 0 ? 0 : lrintf(1e6f / averageDeltaTimeUs),
             idle.max_execution_time,
             pifTaskAverageOrZero(idle.average_execution_time),
             idle.total_execution_time,

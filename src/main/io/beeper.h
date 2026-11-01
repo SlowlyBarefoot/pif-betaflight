@@ -96,7 +96,7 @@ typedef enum {
 void beeper(beeperMode_e mode);
 void beeperSilence(void);
 // Creates the PifBuzzer that plays the beeper sequences and polls the beeper
-// AUX modes. Must run after pifLinker_Init() and beeperInit().
+// AUX modes. Must run after pif_Init() and beeperInit().
 void beeperBuzzerInit(void);
 void beeperConfirmationBeeps(uint8_t beepCount);
 void beeperWarningBeeps(uint8_t beepCount);

@@ -16,26 +16,10 @@
 
 #include "pif/pif_linker.h"
 
-#include "core/pif_timer_manager.h"
-
 
 PifImuSensor g_imu_sensor;
 
-// The 1 ms timer manager. Nothing registers a PifTimer on it yet; it exists so
-// that the tick path is in place and can be measured.
-static PifTimerManager s_timer1ms;
-
-// Not a PifError, so it can never be confused with one that really happened.
-#define PIF_LINKER_DOWN			0xFF
-
-// Whether PIF may be used, which the tick and the loop test. E_SUCCESS is
-// written in one place only, after every init step has succeeded, so no
-// failure path can leave it reading as up - that is why nothing writes it on
-// the way out of a failed init. SysTick is already running by the time
-// pifLinker_Init() is called, so the tick really can arrive before PIF exists
-// and the starting value has to cover that window too.
-static volatile uint8_t s_init_error = PIF_LINKER_DOWN;
-
+PifTimerManager g_timer1ms;
 
 /*
  * Heap for PIF.
@@ -45,7 +29,7 @@ static volatile uint8_t s_init_error = PIF_LINKER_DOWN;
  * memory from _end upwards with no bound, which on this layout means growing
  * straight into the stack in CCM. Replacing _sbrk() with a fixed buffer keeps
  * PIF's memory in .bss where the linker reports it, and turns exhaustion into
- * an E_OUT_OF_HEAP from pifLinker_Init() instead of a corrupted stack.
+ * an E_OUT_OF_HEAP from pif_Init() instead of a corrupted stack.
  *
  * Nothing else in an F4 build calls malloc(), so this is PIF's heap alone.
  *
@@ -83,62 +67,31 @@ void *_sbrk(int incr)
 // micros() is timeUs_t, which is uint64_t when USE_64BIT_TIME is set, while
 // PIF's 1 us clock is uint32_t. Narrow it here rather than relying on the
 // function pointer types matching.
-static uint32_t pifActTimer1us(void)
+uint32_t pifActTimer1us(void)
 {
     return (uint32_t)micros();
 }
 
-uint8_t pifLinker_Init(void)
+BOOL pifLinker_Setup(void)
 {
-    // A retry after a failure has to start dormant again, and the first call
-    // finds it dormant already.
-    s_init_error = PIF_LINKER_DOWN;
-    pif_error = E_SUCCESS;
-
     // Before the sensors are detected, which is where the PIF drivers attach
     // themselves to it.
     pifImuSensor_Init(&g_imu_sensor);
 
-    // pif_Init() stores the clock callback; pifTaskManager_Init() below reads
-    // it straight away to stamp the CPU load window, so micros() has to be
-    // running by now. systemInit() has set usTicks and started SysTick.
-    if (!pif_Init(pifActTimer1us)) {
-        return (uint8_t)pif_error;
-    }
-    // The task manager has to exist before any timer manager:
-    // pifTimerManager_Init() takes one of its timer process slots.
+    // pifTaskManager_Init() reads the clock callback straight away to stamp
+    // the CPU load window; pif_Init() has stored it before calling this.
     if (!pifTaskManager_Init(PIF_TASK_SIZE, PIF_TASK_TIMER_SIZE)) {
-        return (uint8_t)pif_error;
+        return FALSE;
     }
 
-    if (!pifTimerManager_Init(&s_timer1ms, PIF_ID_AUTO, 1000, PIF_TIMER_1MS_SIZE)) {
-        return (uint8_t)pif_error;
-    }
-
-    s_init_error = (uint8_t)E_SUCCESS;
-    return s_init_error;
+    // Keep this the last step. pif_Exit() clears only the task manager, which
+    // takes the timer manager's task with it but leaves g_timer1ms holding its
+    // timers, so a step that could fail after this one would have to call
+    // pifTimerManager_Clear(&g_timer1ms) itself before returning FALSE.
+    return pifTimerManager_Init(&g_timer1ms, PIF_ID_AUTO, 1000, PIF_TIMER_1MS_SIZE);
 }
 
 bool pifLinker_IsReady(void)
 {
-    return s_init_error == (uint8_t)E_SUCCESS;
-}
-
-void pifLinker_sigTimer1ms(void)
-{
-    if (s_init_error != (uint8_t)E_SUCCESS) {
-        return;
-    }
-
-    pif_sigTimer1ms();
-    pifTimerManager_sigTick(&s_timer1ms);
-}
-
-void pifLinker_Loop(void)
-{
-    if (s_init_error != (uint8_t)E_SUCCESS) {
-        return;
-    }
-
-    pifTaskManager_Loop();
+    return pif_state == PST_RUNNING;
 }

@@ -460,6 +460,8 @@ void beeperBuzzerInit(void)
     if (!pifBuzzer_Init(&beeperBuzzer, PIF_ID_AUTO, BEEPER_BUZZER_PERIOD_MS, beeperBuzzerAction)) {
         return;
     }
+    // PIF no longer names module tasks; this keeps the name the CLI showed.
+    beeperBuzzer._p_task->name = "Buzzer";
     beeperBuzzer.evt_period = beeperBuzzerPeriod;
     beeperBuzzer.evt_finish = beeperBuzzerFinish;
 }

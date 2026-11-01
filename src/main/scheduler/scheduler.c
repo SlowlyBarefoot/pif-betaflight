@@ -263,9 +263,19 @@ void getTaskInfo(taskId_e taskId, taskInfo_t *taskInfo)
     taskInfo->totalExecutionTimeUs = p_task->_total_execution_time;
     taskInfo->latestDeltaTimeUs = (timeDelta_t)p_task->_delta_time;
     taskInfo->averageExecutionTime10thUs = averageOrZero(pifTask_GetAverageExecuteTime(p_task)) * 10;
-    taskInfo->averageDeltaTime10thUs = averageOrZero(pifTask_GetAverageDeltaTime(p_task)) * 10;
+    // PIF averages the delta only over releases by the period, so a TM_EXTERNAL
+    // task such as TASK_PID has none. Its rate over the CPU load window, which
+    // counts every release, gives the same figure for those.
+    const uint32_t averageDeltaTimeUs = averageOrZero(pifTask_GetAverageDeltaTime(p_task));
+    if (averageDeltaTimeUs) {
+        taskInfo->averageDeltaTime10thUs = averageDeltaTimeUs * 10;
+    } else if (p_task->_execution_rate) {
+        taskInfo->averageDeltaTime10thUs = 10000000 / p_task->_execution_rate;
+    }
 #if defined(USE_LATE_TASK_STATISTICS)
-    taskInfo->maxDelayUs = p_task->_max_delay;
+    // The later of a start past the period and a start after a trigger, so
+    // the tasks released by trigger report a delay as well.
+    taskInfo->maxDelayUs = pifTask_GetMaxDelay(p_task);
 #endif
 }
 
@@ -343,10 +353,9 @@ void schedulerIgnoreTaskExecTime()
     if (!p_task) return;
 
     // Keep this run out of the block time, which is what decides whether the
-    // task may start before the next gyro release. The execution time
-    // statistics still take it: PIF has no way to leave a run out of those, and
-    // a peak the CLI hides is a peak nobody fixes.
-    pifTask_IgnoreBlockTime(p_task);
+    // task may start before the next gyro release, and out of the execution
+    // time statistics, as the old scheduler did. The CPU load still counts it.
+    pifTask_IgnoreStatistics(p_task);
 
     ignoreExecTimeTask = p_task;
     ignoreExecTimeAt = p_task->_last_execute_time;
@@ -377,7 +386,8 @@ void schedulerResetTaskMaxExecutionTime(taskId_e taskId)
 
     if (!task || !task->p_task) return;
 
-    pifTask_ResetMaxExecutionTime(task->p_task);
+    // The longest delay goes with it, as the late task statistics did.
+    pifTask_ResetMaxStatistics(task->p_task);
     // The moving window forgets an outlier on its own, but until it does, a
     // maximum left over from a one off long run keeps the task from being
     // started before a gyro release. Clearing the max asked for here covers

@@ -19,7 +19,8 @@
 // it produces.
 //#define PIF_DEBUG
 
-#define PIF_INLINE							inline
+// pif.h picks static inline for the C99/gnu99 this target is built with.
+//#define PIF_STATIC_INLINE					static inline
 
 // pif.h already falls back to __attribute__ ((weak)) for GCC, which is the
 // only compiler this target is built with.
@@ -54,6 +55,11 @@
 #define DISALLOW_YIELD_ID_NONE				0
 #define DISALLOW_YIELD_ID_I2C				1
 #define DISALLOW_YIELD_ID_SPI				2
+
+// TM_REALTIME, the release kept free ahead of the realtime task and
+// PifTask::max_skip. PIF leaves them out by default; TASK_GYRO is TM_REALTIME
+// and scheduler.c gives every other task a max_skip, so the gyro loop needs it.
+#define PIF_USE_TASK_REALTIME
 
 // Per task execution time / delta time / trigger delay statistics. Every
 // Betaflight task is a PifTask now, so this is what "tasks" in the CLI is
@@ -122,9 +128,9 @@
 #define PIF_MSP_RECEIVE_TIMEOUT				0
 
 
-// -------- pifTimer -----------------------------
+// -------- pifPwmGen ----------------------------
 
-//#define PIF_PWM_MAX_DUTY					1000
+//#define PIF_PWM_GEN_MAX_DUTY				1000
 
 
 #endif  // PIF_CONF_H

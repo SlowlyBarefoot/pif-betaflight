@@ -101,11 +101,14 @@ void SysTick_Handler(void)
     HAL_IncTick();
 #endif
 
-    // PIF's 1 ms tick. Outside the ATOMIC_BLOCK above: it only advances
-    // counters and walks the 1 ms timer list, and holding BASEPRI at
-    // NVIC_PRIO_MAX across it would extend the interrupt latency of every
-    // other peripheral. Does nothing until pifLinker_Init() has succeeded.
-    pifLinker_sigTimer1ms();
+    // Runs from PST_TIMER on, so that the setups can wait with pif_Delay1ms().
+    pif_sigTimer1ms();
+
+    // The timer manager only once the setup is done: before that it may not
+    // exist yet, or be left over from a failed attempt.
+    if (pif_state == PST_RUNNING) {
+        pifTimerManager_sigTick(&g_timer1ms);
+    }
 }
 
 // Return system uptime in microseconds (rollover in 70minutes)
