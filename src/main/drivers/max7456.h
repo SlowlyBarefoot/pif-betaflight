@@ -24,7 +24,7 @@
 
 #include "drivers/display.h"
 
-#include "osd/pif_max7456.h"
+#include "display/osd/pif_max7456.h"
 
 /** PAL or NTSC, value is number of chars total */
 #define VIDEO_BUFFER_CHARS_NTSC   390

@@ -43,7 +43,7 @@
 
 #include "pif/pif_linker.h"
 
-#include "sensor/pif_bmi270_spi.h"
+#include "sensor/imu/pif_bmi270_spi.h"
 
 // 10 MHz max SPI frequency
 #define BMI270_MAX_SPI_CLK_HZ 10000000

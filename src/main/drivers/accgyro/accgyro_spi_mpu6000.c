@@ -50,7 +50,7 @@
 
 #include "pif/pif_linker.h"
 
-#include "sensor/pif_mpu60x0_spi.h"
+#include "sensor/imu/pif_mpu60x0_spi.h"
 
 // 20 MHz max SPI frequency
 #define MPU6000_MAX_SPI_CLK_HZ 20000000

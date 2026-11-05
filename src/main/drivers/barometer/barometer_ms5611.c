@@ -39,7 +39,7 @@
 
 #include "pif/pif_linker.h"
 
-#include "sensor/pif_ms5611.h"
+#include "sensor/baro/pif_ms5611.h"
 
 // 10 MHz max SPI frequency
 #define MS5611_MAX_SPI_CLK_HZ 10000000

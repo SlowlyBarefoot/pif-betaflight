@@ -57,7 +57,7 @@
 #include "sensors/gyro.h"
 #include "sensors/sensors.h"
 
-#include "sensor/pif_ahrs.h"
+#include "sensor/imu/pif_ahrs.h"
 
 #if defined(SIMULATOR_BUILD) && defined(SIMULATOR_MULTITHREAD)
 #include <stdio.h>

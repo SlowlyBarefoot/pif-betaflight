@@ -41,7 +41,7 @@
 
 #include "pif/pif_linker.h"
 
-#include "sensor/pif_mpu60x0_i2c.h"
+#include "sensor/imu/pif_mpu60x0_i2c.h"
 
 #include "accgyro.h"
 #include "accgyro_mpu.h"

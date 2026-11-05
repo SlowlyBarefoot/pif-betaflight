@@ -46,8 +46,8 @@
 
 #include "pif/pif_linker.h"
 
-#include "sensor/pif_dps310_i2c.h"
-#include "sensor/pif_dps310_spi.h"
+#include "sensor/baro/pif_dps310_i2c.h"
+#include "sensor/baro/pif_dps310_spi.h"
 
 // 10 MHz max SPI frequency
 #define DPS310_MAX_SPI_CLK_HZ 10000000

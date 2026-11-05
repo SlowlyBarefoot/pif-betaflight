@@ -25,7 +25,7 @@
 #include "core/pif.h"
 #include "core/pif_task_manager.h"
 #include "core/pif_timer_manager.h"
-#include "sensor/pif_imu_sensor.h"
+#include "sensor/imu/pif_imu_sensor.h"
 
 // Number of PifTask slots the task manager is created with. Every Betaflight
 // task takes one (scheduler.c registers the whole table), TASK_COUNT in

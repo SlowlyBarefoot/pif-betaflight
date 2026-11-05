@@ -46,7 +46,7 @@
 
 #include "pif/pif_linker.h"
 
-#include "sensor/pif_hmc5883.h"
+#include "sensor/mag/pif_hmc5883.h"
 
 #include "compass.h"
 

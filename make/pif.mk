@@ -48,11 +48,11 @@ INCLUDE_DIRS    := $(INCLUDE_DIRS) \
                    $(PIF_DIR)/gpl/include \
                    $(ROOT)/src/main/pif
 
-VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/codec:$(PIF_DIR)/source/filter:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/protocol:$(PIF_DIR)/source/storage:$(ROOT)/src/main/pif
+VPATH           := $(VPATH):$(PIF_DIR)/source/core:$(PIF_DIR)/source/codec:$(PIF_DIR)/source/filter:$(PIF_DIR)/source/communication:$(PIF_DIR)/source/sensor:$(PIF_DIR)/source/sensor/imu:$(PIF_DIR)/source/sensor/mag:$(PIF_DIR)/source/sensor/baro:$(PIF_DIR)/source/rc:$(PIF_DIR)/source/sound:$(PIF_DIR)/source/protocol:$(PIF_DIR)/source/storage:$(ROOT)/src/main/pif
 
 # The GPL-3.0 modules of PIF (GPS, DShot, MAX7456, MSPv2, HMC5883, MS5611)
 # live under gpl/. Betaflight is GPL-3.0 as well, so building them is fine.
-VPATH           := $(VPATH):$(PIF_DIR)/gpl/source/sensor:$(PIF_DIR)/gpl/source/osd:$(PIF_DIR)/gpl/source/gps:$(PIF_DIR)/gpl/source/protocol:$(PIF_DIR)/gpl/source/motor
+VPATH           := $(VPATH):$(PIF_DIR)/gpl/source/sensor/mag:$(PIF_DIR)/gpl/source/sensor/baro:$(PIF_DIR)/gpl/source/display/osd:$(PIF_DIR)/gpl/source/gps:$(PIF_DIR)/gpl/source/protocol:$(PIF_DIR)/gpl/source/actuator/motor
 
 PIF_SRC = \
             pif.c \

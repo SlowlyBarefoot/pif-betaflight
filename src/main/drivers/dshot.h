@@ -24,7 +24,7 @@
 
 #include "pg/motor.h"
 
-#include "motor/pif_dshot.h"
+#include "actuator/motor/pif_dshot.h"
 
 #define DSHOT_MIN_THROTTLE       48
 #define DSHOT_MAX_THROTTLE     2047
